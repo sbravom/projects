@@ -1,0 +1,1 @@
+This code replicates Romer (1993) "Openness and Inflation"

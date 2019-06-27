@@ -1,0 +1,331 @@
+---
+title: "Garrat and Lee (2010)"
+output:
+  pdf_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Specify what not to show in the PDF file
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, error=FALSE)
+```
+
+This report can be fully replicated by following the guidelines provided [here](https://1drv.ms/f/s!Ag_YhEkARvmCgsl3TjCKXA4Wc719hA)
+
+
+
+# Setup
+
+```{r instalation, echo=TRUE}
+# Instalation
+
+Install_And_Load <- function(packages) {
+  k <- packages[!(packages %in% installed.packages()[,"Package"])];
+  if(length(k))
+  {install.packages(k, repos='https://cran.rstudio.com/');}
+  
+  for(package_name in packages)
+  {library(package_name,character.only=TRUE, quietly = TRUE);}
+}
+
+packages <- c("tidyverse",
+              "dplyr",
+              "readxl",
+              "ggthemes",
+              "urca",
+              "tseries",
+              "vars",
+              "forecast",
+              "lubridate",
+              "ggthemes",
+              "astsa",
+              "timeDate",
+              "tsDyn"
+                )
+
+Install_And_Load(packages)
+
+```
+
+# Import data
+
+```{r data}
+# Import data
+data <- read_excel("garratt_lee_2010_data.xlsx")
+
+# Crate date index
+mm <- unlist(rep.int(list("01", "02", "03", "04", "05", "06",
+              "07", "08", "09", "10", "11", "12"), 
+             times = (2006-1970+1)))
+
+yyyy <- rep(1970:2006, each = 12)
+
+index <- data.frame(yyyy, mm) %>% 
+        .[-c(nrow(.), nrow(.)-1), ] %>%    # until 10/2006
+        mutate(date = paste(yyyy, mm, "01", sep = "-")) %>% 
+        dplyr::select(date)
+
+data <- bind_cols(index, map_dfc(data[-1], as.double))
+
+data$date <- ymd(data$date)
+
+data <- data  %>% dplyr::filter(year(date) >= 1981)
+```
+
+# Define Variables
+
+
+```{r variables}
+# Define variables
+
+# Efficient Market Hypothesis (EMH)
+
+data$ln_e = log(data$ex)
+data$ln_f = log(data$forusuk)
+
+# Monetary Fundamentals model (MF)
+
+data$ln_x <- (log(data$MUS) - log(data$M0UK)) - (log(data$YUS) - log(data$YUK))
+
+# Purchasing Power Parity (PPP)
+
+data$ln_p_pstar <- log(data$PUS/data$PUK)
+
+# Data frame for each model
+emh <- data %>% dplyr::select(date, ln_e, ln_f)
+mf  <- data %>% dplyr::select(date, ln_e, ln_x)
+ppp <- data %>% dplyr::select(date, ln_e, ln_p_pstar)
+ar  <- data %>% dplyr::select(date, ln_e)
+
+# List of samples
+samples <- list(emh = emh, mf = mf, ppp = ppp, ar = ar) # the order matters
+
+# For plots
+data_ts <- ts(data[-1], frequency = 12, start = c(1981, 01), end = c(2006, 10))
+```
+
+# Plot variables
+
+```{r graphs}
+ts.plot(data_ts[, "ln_e"],       gpars = list(xlab=NULL, ylab="Log Exchange Rate"))
+ts.plot(data_ts[, "ln_f"],       gpars = list(xlab=NULL, ylab="Log Forward Exchange Rate"))
+ts.plot(data_ts[, "ln_x"],       gpars = list(xlab=NULL, ylab="Fundamentals term"))
+ts.plot(data_ts[, "ln_p_pstar"], gpars = list(xlab=NULL, ylab="Log(p/p*)"))
+ts.plot(data_ts[, c("ln_e", "ln_f")], gpars = list(xlab=NULL, col=1:2))
+legend("topright", legend = c("Log Exchange Rate", "Log Forward Exchange Rate"), col = 1:2, lty = 1, bty = "n")
+
+
+ts.plot(log(data_ts[, c("YUS", "YUK")]), gpars = list(xlab=NULL, col=1:2))
+legend("topleft", legend = c("Log US industrial production", "Log UK industrial production"), col = 1:2, lty = 1, bty = "n")
+
+ts.plot(log(data_ts[, c("PUS", "PUK")]), gpars = list(xlab=NULL, col=1:2))
+legend("topleft", legend = c("Log US consumer prices", "Log UK consumer prices"), col = 1:2, lty = 1, bty = "n")
+
+
+ts.plot(log(data_ts[, c("MUS", "M0UK")]), gpars = list(xlab=NULL, col=1:2))
+legend("topleft", legend = c("Log Money Supply US", "Log Money Supply UK"), col = 1:2, lty = 1, bty = "n")
+
+
+ts.plot(diff(data_ts[, "ln_e"]),       gpars=list(xlab=NULL, ylab = Delta~"Log Exchange Rate"))
+ts.plot(diff(data_ts[, "ln_f"]),       gpars=list(xlab=NULL, ylab = Delta~"Log Forward Exchange Rate"))
+ts.plot(diff(data_ts[, "ln_x"]),       gpars=list(xlab=NULL, ylab = Delta~"Fundamentals term"))
+ts.plot(diff(data_ts[, "ln_p_pstar"]), gpars=list(xlab=NULL, ylab = Delta~"Log(p/p*)"))
+```
+
+# Stationarity tests
+
+```{r stationarity_test}
+# Testing stationarity for all variables using the estimation sample
+
+adf_test <- as.data.frame(matrix(NA, nrow = 8, ncol = 3))
+colnames(adf_test) <- c("Variable", "DF statistic", "p-value")
+variables <- c("ln_e", "ln_f", "ln_x", "ln_p_pstar")
+adf_test[, 1] <- c(variables, paste0("D_", variables))
+
+data_est_sample <- data[1:258, variables]   # estimation sample, from the beginning until 06-2002
+
+for (i in 1:4) {
+adf_test[i, 2]   <- adf.test(data_est_sample[, i], alternative = "stationary")$statistic
+adf_test[i, 3]   <- adf.test(data_est_sample[, i], alternative = "stationary")$p.value
+adf_test[i+4, 2] <- adf.test(diff(data_est_sample[, i]), alternative = "stationary")$statistic
+adf_test[i+4, 3] <- adf.test(diff(data_est_sample[, i]), alternative = "stationary")$p.value
+}
+
+# H0: no stationarity
+adf_test
+```
+
+
+# Cointegration tests
+
+```{r cointegration_test}
+# Johansen cointegration test to see if a cointegrating vector exists
+# The test is done using all the estimation sample
+
+coint_test <- as.data.frame(matrix(NA, nrow = 3, ncol = 4))
+coint_test[, 1] <- c("EMH", "MF", "PPP")
+colnames(coint_test) <- c("Model", "H0: r<=0", "H0: r=1", "Beta")
+
+for (i in 1:3) {
+  coint_test[i, 2] <- summary(ca.jo(samples[[i]][1:258, -1], K = 12, type = "trace", ecdet = "none"))@teststat[2]
+  coint_test[i, 3] <- summary(ca.jo(samples[[i]][1:258, -1], K = 12, type = "trace", ecdet = "none"))@teststat[1]
+  coint_test[i, 4] <- summary(ca.jo(samples[[i]][1:258, -1], K = 12, type = "trace", ecdet = "none"))@V[2, 1]
+}
+
+critical_values <- summary(ca.jo(samples[[1]][1:258, -1], K = 12, type = "trace", ecdet = "none"))@cval
+
+# If statistic > critical value then H0: r=1 or r=0 is rejected
+coint_test
+critical_values
+
+# At 5% significance level H0: r=0 is rejected for EMH and PPP but not for MF. H0: r<=1 is not rejected for all.
+# Hence, there is one cointegration relationship in EMH and PPP and none in MF.
+```
+
+
+
+```{r var_results}
+# VECM results (Table 1 in GL 2010) using the estimation period
+diagnostics <- as.data.frame(matrix(NA, nrow = 4, ncol = 5))
+diagnostics[, 1] <- c("EMH", "MF", "PPP", "AR")
+colnames(diagnostics) <- c("Model", "LL", "SSR", "AIC", "BIC")
+
+for (i in 1:3) {
+vecm <- VECM(samples[[i]][1:258, -1], lag = 11, r = 1, beta = 1, estim = "ML", include = "const")
+diagnostics[i, 2] <- logLik(vecm)
+diagnostics[i, 3] <- summary(vecm)$SSR
+diagnostics[i, 4] <- summary(vecm)$aic
+diagnostics[i, 5] <- summary(vecm)$bic
+}
+
+diagnostics[4, 2] <- Arima(ar[1:258, -1], order = c(12, 1, 0))$loglik
+diagnostics[4, 3] <- sum((Arima(ar[1:258, -1], order = c(12, 1, 0))$residuals)^2)
+diagnostics[4, 4] <- Arima(ar[1:258, -1], order = c(12, 1, 0))$aic
+diagnostics[4, 5] <- Arima(ar[1:258, -1], order = c(12, 1, 0))$bic
+
+diagnostics
+```
+
+
+# Results
+
+## Functions
+
+```{r functions}
+# Function to perform forecasts from a VEC
+forecast_vec <- function(x, p = 11, h = 1) {
+  qtr <- seq(108, 258, by = 3)
+  forecasts <- data[qtr + h, c("date", "ln_e")]
+  aux <- list()
+  for (i in (qtr)) {
+vecm <- VECM(x[1:i, -1], lag = p, r = 1, beta = 1, estim = "ML", include = "const")
+aux[i] <- predict(vecm, n.ahead = h) %>% .[nrow(.), 1]
+}
+ unlist(aux)
+}
+
+
+# Function to perform forecasts  from an AR
+forecast_ar <- function(x, p = 12, h = 1) {
+aux <- list()  # refresh aux variable
+y <- ts(data$ln_e, start = 1, frequency = 1) # as if annual data
+int <- seq(0, 150, by = 3)
+for (i in int) { 
+  win <- window(y, start = 1, end = 108 + i)
+  aux[i+1] <- sarima.for(win, n.ahead = h, p = p, d = 1, q = 0, plot.all = FALSE)$pred[h]
+}
+  unlist(aux)
+}
+
+
+# Function takes the list of samples (emh, ppp, mf and ar) and returns forecasts for a given horizon (n.ahead)
+forecast_all <- function(x, n.ahead = 1) {
+  qtr <- seq(108, 258, by = 3)
+  bind_cols(
+             ar[qtr + n.ahead, ],                             # Actual values
+             map_dfc(x[1:3], forecast_vec, h = n.ahead),      # Predicted values from EMH, MF and PPP
+             data.frame(ar = forecast_ar(x[4], h = n.ahead)),  # Predicted values from AR
+             data.frame(rw = data[qtr, "ln_e"])               # Predicted values from RW
+             ) %>% 
+  dplyr::mutate(mean = (emh+mf+ppp+ar)/4)
+}   
+
+```
+
+
+## Forecasts
+
+```{r forecast_results, results='hide', fig.keep = 'none'}
+# Forecasts
+forecasted <- list()
+
+horizons <- seq(1, 24, by = 3)
+
+horizons
+
+for (i in horizons) {
+forecasted[[i]]  <- forecast_all(samples, n.ahead = i)
+}
+```
+
+
+## RMSE
+
+```{r rmse}
+# RMSE calculation
+rmse <- matrix(NA, nrow = max(horizons), ncol = 6)
+
+models <- 1:6
+
+for (i in horizons) {
+for (j in models) {
+rmse[i, j] <- accuracy(f = forecasted[[i]][[2+j]], x = forecasted[[i]][["ln_e"]])[, "RMSE"]
+ }
+}
+
+rmse <- as.data.frame(na.omit(rmse))
+colnames(rmse)  <- c("EMH", "MF", "PPP", "AR", "RW", "Mean")
+rmse$n.ahead <- horizons
+
+rmse
+```
+
+
+## Forecast evaluation
+
+```{r ratios}
+# Ratio RMSE_model/RMSE_RW
+ratios <- rmse %>% mutate(EMH = EMH/RW,
+                          MF = MF/RW,
+                          PPP = PPP/RW,
+                          AR = AR/RW,
+                          Mean = Mean/RW, 
+                          RW = RW/RW)
+
+ratios
+
+ratios_tidy <- gather(ratios, key = "model", value = "ratio", -n.ahead)
+
+plot <- ratios_tidy %>% ggplot(aes(x = n.ahead, y = ratio)) + 
+  geom_line(aes(col = model), size = 1.2) +
+  scale_x_discrete(name ="Forecast horizon", 
+                    limits=c(1,4,7,10,13,16,19,22)) +
+  ylab(NULL) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+    panel.background = element_blank(),
+    legend.title=element_blank(),
+    legend.position = c(0.1, 0.2),
+    legend.text=element_text(size=12),
+    axis.title.x = element_text(size=12),
+    axis.text.x  = element_text(size=11),
+    axis.text.y  = element_text(size=11))
+
+
+plot
+```
+
+

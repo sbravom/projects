@@ -1,0 +1,1 @@
+This code replicates Table 3 in Garratt and Lee (2010)

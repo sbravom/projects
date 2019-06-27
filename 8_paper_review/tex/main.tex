@@ -1,0 +1,236 @@
+
+ \documentclass[final,3p,times,twocolumn]{elsarticle}
+%\usepackage{thebibliography}
+
+
+
+\makeatletter
+\def\ps@pprintTitle{%
+   \let\@oddhead\@empty
+   \let\@evenhead\@empty
+   \def\@oddfoot{\reset@font\hfil\thepage\hfil}
+   \let\@evenfoot\@oddfoot
+}
+\makeatother
+
+%% Use the option review to obtain double line spacing
+%% \documentclass[preprint,review,12pt]{elsarticle}
+
+%% Use the options 1p,twocolumn; 3p; 3p,twocolumn; 5p; or 5p,twocolumn
+%% for a journal layout:
+%% \documentclass[final,1p,times]{elsarticle}
+%% \documentclass[final,1p,times,twocolumn]{elsarticle}
+%% \documentclass[final,3p,times]{elsarticle}
+%% \documentclass[final,3p,times,twocolumn]{elsarticle}
+%% \documentclass[final,5p,times]{elsarticle}
+%% \documentclass[final,5p,times,twocolumn]{elsarticle}
+
+%% The graphicx package provides the includegraphics command.
+%\usepackage{graphicx}
+%% The amssymb package provides various useful mathematical symbols
+%\usepackage{amssymb}
+%% The amsthm package provides extended theorem environments
+%\usepackage{amsthm}
+
+%\usepackage{amsmath}
+
+\usepackage{xpatch}
+
+
+\xpatchcmd{\MaketitleBox}{\hrule\vskip12pt}{\vspace{-2\baselineskip}}{}{}% remove first horizontal rule (above abstract) + space
+\xpatchcmd{\MaketitleBox}{\hrule}{}{}{}% remoce second horizonral rule (below keywords)
+
+%% natbib.sty is loaded by default. However, natbib options can be
+%% provided with \biboptions{...} command. Following options are
+%% valid:
+
+\usepackage[
+backend=biber,
+style=authoryear,
+sorting=nty
+]{biblatex}
+\addbibresource{sample.bib}
+
+
+
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Title, authors and addresses
+
+\title{\huge{Do Investors Trade More When Stocks Have
+Performed Well? A Critical Review}}
+
+%% use the tnoteref command within \title for footnotes;
+%% use the tnotetext command for the associated footnote;
+%% use the fnref command within \author or \address for footnotes;
+%% use the fntext command for the associated footnote;
+%% use the corref command within \author for corresponding author footnotes;
+%% use the cortext command for the associated footnote;
+%% use the ead command for the email address,
+%% and the form \ead[url] for the home page:
+%%
+%% \title{Title\tnoteref{label1}}
+%% \tnotetext[label1]{}
+%% \author{Name\corref{cor1}\fnref{label2}}
+%% \ead{email address}
+%% \ead[url]{home page}
+%% \fntext[label2]{}
+%% \cortext[cor1]{}
+%% \address{Address\fnref{label3}}
+%% \fntext[label3]{}
+
+
+%% use optional labels to link authors explicitly to addresses:
+%% \author[label1,label2]{<author name>}
+%% \address[label1]{<address>}
+%% \address[label2]{<address>}
+
+\author{\Large{Student ID: 4335707 \\
+Supervisor: John Gathergood \\ \\
+Word count: 2385}}
+
+
+%\begin{abstract}
+%\end{abstract}
+
+%\begin{keyword}
+%
+%\end{keyword}
+
+\end{frontmatter}
+
+
+%%
+%% Start line numbering here if you want
+%%
+
+%% main text
+\section{Introduction}
+\label{S:1}
+
+This report provides a review of Griffin, Nardari, and Stulz (2006) (henceforth GNS). GNS examine the relation between past weekly returns and stock turnover, and it aims to address two questions. First, it investigates whether investors trade more when markets have done well in the recent past. Second, it explores why investors might trade more following positive returns by focusing on the determinants of the turnover-return relation.\par
+
+The relation between turnover and stock returns had been explored by several studies before.\footnote{The prediction of a positive relation between trading volume and stock returns follows mostly from overconfidence theories, which argue that positive past market performance make investors overconfident, and as a result these
+investors trade more. Daniel, Hirshleifer, and Subrahmanyam (1998) was one of the first papers to model overconfidence for investment decisions. Using data from a discount broker, Barber and Odean (2002) was one of the first papers documenting that high past returns induce investors to trade more. Statman, Thorley, and Vorkink (2006) use market-wide measures of trading volume and find that it is related to past returns.} However, since the return-turnover relation depends on various aspects which change over time and across countries, the utilization of distinct estimation approaches, sample periods, and set of countries had led these studies typically to divergent conclusions.\footnote{See Glaser and Weber (2009) for a comprehensive literature review.}\par
+
+By using a vector autoregression approach (VAR), GNS was the first attempt in the literature to characterize the return-turnover relation across a number of countries, examine the determinants of cross-country differences, and explore how this relation change by investor types, over time, and shock signs. This study made a valuable contribution to the understanding of the return-volume relation, and led to the development of theoretical models (scarcely existent at the time of the publication of the paper) and new empirical analysis on this topic.\footnote{The influence of GNS has been reflected in both theoretical and empirical studies. For instance, Barberis and Xiong (2012) constructs a model to link realization utility from gains and losses to a number of financial phenomena, including a higher trading volume after positive shocks as compared to negative shocks, as documented by GNS. Further, Jotikasthira et al. (2012) builds a model to embed the dependence of fund flows on an excess of returns measure. Regarding empirical studies, Chui et al. (2010) examine how cultural differences influence the returns of momentum strategies, and measure country's trading volume as in GNS. Karolyi et al. (2012) study how commonality in liquidity varies across countries and over time, and also measures turnover as in GNS. Glaser and Weber (2009) further explored the return-turnover relation reported by GNS using panel data for individual German investors. Griffin et al. (2010) employs roughly the same variables as in GNS to characterize stock market activity.} \par
+
+
+The findings provided by this article may help, in concrete terms, market makers to anticipate trading volume after return shocks, portfolio managers to design trading plans, and authorities to enhance the liquidity of financial markets. Further, a better comprehension of what drives trading volume is particularly important for developing markets, as regulators in these countries attempt to ensure that liquidity remains strong in periods of negative stock returns.\par
+
+\section{Methodology}
+
+The return-volume relation is obtained from estimating a Vector Aurorregresive model (VAR) of stock market return, market volatility, and turnover for 46 countries, including 26 developed and 20 developing markets. Once the VAR is estimated, Generalised Impulse Response Functions (GIRF) (Koop et al., 1996) are computed where the effect measures the relation between a 1 standard deviation (SD) shock to returns and next period’s turnover,\footnote{GNS argue that GIR analysis is more appropriate for the purpose of this study, since orthogonalized IRF with trading volume ordered before returns could fail to account for intraweekly relationships between past returns and current trading volume.} and where the responses are also expressed in SD. The VAR is estimated on a country-by-country basis using weekly data, and the period of main interest is from January 2, 1993 through June 30, 2003.\footnote{Subperiods within 1992-2003 and the 1983-1992 period are analyzed in the subsequent section.} The data is collected from Datastream and all variables are measured in local currency. Turnover is constructed by scaling aggregate traded value by the week's contemporaneous total market capitalization. Moreover, as turnover may be influenced by factors contributing to a general increase in trading activity over time, it is detrended by first taking its natural log and then subtracting its 20-week moving average. The primary measure of volatility is obtained from the EGARCH (1,1) specification proposed by Nelson (1991).\footnote{This model accounts for the asymmetric relation between volatility and returns, i.e. negative returns have a greater impact on volatiliy than positive returns of the same magnitude.}\par
+
+
+\section{Results}
+
+Econometric results are presented in three steps. First, a bivariate VAR between turnover and returns is estimated. Second, in order to account for the empirically proven relation between volatility and both returns and volume,\footnote{Although GNS does not provide any reference addressing this relationship, it is well documented in Andersen (1996),  Brailsford (1996), and Chen et al. (2001).} a trivariate VAR for turnover, returns and volatility is estimated. Lastly, it is shown how the turnover-return relation has evolved over time.\par
+
+%Third, a sensitivity analysis is performed using an alternative measure of volatility, a different detrending method, and including world and currency returns to the VAR
+
+\subsection{Bivariate VAR}
+
+
+GIRFs from the bivariate VAR indicate that the relation between past returns and turnover is positive and significant in many countires, but its magnitude varies broadly. On average, a positive 1 SD shock to returns is followed by a 0.13, 0.28, and 0.32 SD after one, five and ten weeks, respectively. This indicates that the cumulative response generally increases over time. Moreover, there are remarkable differences in the turnover-return relation between developed and developing countries. For high-income countries, a 1 SD shock to returns is followed by a 0.11 SD increase in turnover after 10 weeks, while the 10-week response to the same shock for developing countries is nearly six times as large (0.6).\par
+
+% statistical significance? maybe it's too much
+
+\subsection{Trivariate VAR}
+
+Taking into account EGARCH volatility generally reinforces the return-volume relation. GIRFs from the trivariate VAR show that, on average, a positive 1 SD shock to returns is followed by a 0.17, 0.36, and 0.46 SD after one, five and ten weeks, respectively. The magnitudes of these responses are strictly greater than those found for the bivariate VAR system. For high-income countries, a 1 SD shock to returns is followed by a 0.26 SD increase in turnover after 10 weeks, whereas in developing markets this effect is 0.72 SD. Further, results evidenced a significant variation in the return-turnover relation across countries in both categories.\footnote{For instance, among  high-income economies, the largest 10-week response of turnover to returns is 1.5 SD (Taiwan), while the smallest response is 0.03 SD (United States). For developing markets, the largest 10-week response is more than 1.4 (China) and the smallest is around -0.1 (Czech Republic).} Results were also confirmed through the estimation of IRFs using daily frequency data. In this case, a positive shock to returns has a positive effect in the next-day turnover in all high-income and developing markets, and, again, the effect is higher for developing markets at lags 1, 5, and 10. Overall, the cross-country analysis from the trivariate VAR constitute the core contribution of the paper to the literature.\footnote{A sensitivity analysis with five modifications of the trivariate VAR was considered in order to rule out the possibility that the results are driven by the chosen specification. First, a different weekly volatility measure is used by fitting an autoregressive model for daily returns and then cumulating daily squared residuals. Second, a trivariate VAR is estimated where the turnover measure is not detrended. Third, a trivariate VAR is estimated using dollar denominated returns and volatilities measured from these dollar returns. Fourth, a quadrivariate VAR is estimated with the standard turnover, returns and volatilities, plus dollar cross-rate currency returns. Finally, a five-variable VAR is estimated using the same specification as in the third analysis but including world market return and world market volatility as exogenous variables. Hence, none of these alternative specifications substantially modify the return-turnover relation found previously.}\par
+
+%\footnote{The rapid 1 lag response of turnover to shock returns also suggests that participation costs hardly explain the return-turnover relation in the short term.} O
+
+%(For instance or too much??)
+%STATISTICAL SIGNIFICANCE?? THIS PART IS THE CORE RESULT (THE REST IS SECOND ORDER, COMMENT AND GGIVE MORE EMPHASIS!!)
+
+
+\subsection{Subperiod results}
+
+
+To investigate how the response of turnover to returns has evolved over time, the sample is split into two periods, one from January 1993 to June 1997, and the other from January 1999 to June 2003. Comparing the results for both periods can explain whether the large differences between high-income and developing countries are due to the fact that developing countries suffered serious crises during the period analyzed. Results showed that in the first period, from 1993 to 1997, both high-income economies and developing economies had on average similar responses of turnover to a 1 SD shock to returns after 10 weeks (0.58 and 0.59 respectively). However, in the 1999-2003 period the 10-week turnover response to a 1 SD shock to returns in high-income economies dropped remarkably to 0.12 SD, while for developing economies rose by a fifth to 0.72 SD. The main finding here is that, throughout the 1990s, high-income countries tended to exhibit decreasing responses of turnover to return shocks, and that developing countries responses were large, positive, and very similar in magnitudes.
+
+\section{Understanding the turnover-return relation}
+
+Once the statistical relationship between past returns and turnover is identified, the paper tries to rationalize these results with economic theory. However, while the literature does not offer any model of the return-volume relation that can be tested directly, it does offer insights about the causes of trading volume. The paper thus considers several mechanisms based on the determinants of trading volume which may account for the cross-sectional variation in the return-volume relation. Specifically, GNS tests the implications of hypotheses from the following theories: (1) informed trading and short-sale constraints, (2) uninformed investors and short-sale constraints, (3) liquidity effects, (4), participation costs, (5) overconfidence, (6) disposition effect, and (7) momentum investing.\footnote{Each of these theories is described extensively in GNS. Due to limitations imposed to the length of this report, these theories are not described here. Moreover, while GNS broadly discusses the implications of the findings of different specifications for the validity of the various hypothesis, this report is concerned with the main findings of the paper, so the vailidity of each theory is not thoroughly reviewed.}\par 
+
+All these theories have their own empirical implications, which are separated into those predicting differences in the return-turnover relation across countries, across investor types (individual, institutional, or foreign), across time, and in responses to positive and negative return shocks. Moreover, it is important to keep in mind that the predictions implied by these theories are not mutually exclusive.\footnote{As an illustration, consider the participation cost theory. This theory predicts that some investors do not trade due to costs of participation but that they would be  induced to trade after observing high past returns. Therefore, the return-turnover relation is stronger in markets with concentrated returns (country dimension), stronger for individual investors (investor-type dimension), decreasing through time as more investor participate (time dimension), and symmetric in response to both positive and negative return shocks.}\par 
+
+%The following subsections discuss the extent at which the different theories explaining the turnover-return relation hold by looking at differences by countries, investors, time and shocks’ sign.
+
+\subsection{Cross-country analysis}
+
+Cross-country analysis is studied in two ways. First, the five-week response of turnover to returns from the results of the trivariate VAR analysis was regressed against proxies for the diverse theories individually (i.e. univariate regressions). Results supported most of the theories except for the liquidity theory. Second, multivariate regressions were performed with the most powerful regressors from the univariate analysis. As before, most of the theoretical predictions found support in the regression results, so it was not possible to distinguish between the relative importance of these arguments. An important drawback of this analysis, which is not mentioned in the paper, is that only 46 observations (or even less) were used to run the regressions, meaning that the power of the associated statistical tests is remarkably low.\par
+
+
+\subsection{Trading by investor type}
+
+For each country, impulse response functions from VARs with returns, EGARCH volatility, and detrended turnover for both domestic and foreign investors indicated that domestic turnover has a stronger reaction to positive return shocks than foreign turnover. Consequently, it is ruled out that foreign investors or speculators drive the return-turnover relation.\par 
+
+A similar VAR specification was used to disentangle differences between domestic institutional and individual investors. Results showed that the increase in turnover for individual investors after a positive return shock is considerably higher compared to the increase in turnover for institutional investors. Interestingly, the return-turnover relation is similar for domestic institutions and foreign investors, which implies, according to the authors, that the distinction between institutions and individual investors is the most important cause of the strength in the return-turnover relation. However, this conclusion rests on the assumption that most (if not all) foreign investors are not individual ones.\par 
+
+An important caveat of the study of the return-turnover relation by investor type is that, because of lack of data availability, seven markets were considered in the domestic and foreign trading analysis,\footnote{These countries are Indonesia, India, Japan, South Korea, Philippines, Taiwan, and Thailand.} and only four in the institutional and individual trading analysis.\footnote{These countries are Thailand, Taiwan, South Korea, and Japan.} Moreover, in both cases, except for Japan, all countries corresponded to developing markets. Therefore, it is not clear how these dynamics would be mirrored for developed markets. However, one of the main conclusions of the paper states, with great conviction, that the return-turnover relation has become weaker in developed markets because, among many reasons, institutional investors have become more predominant there. This assertion implicitly assumes that the return-turnover relation for individual investors is also high in developed markets, and that the overall relation turns weak due to the widespread presence of institutional investors. As GNS is unable to observe the return-turnover relation for individual investors in high-income markets, and does not cite any work documenting this fact, that conclusion is misleading. It may be plausible, for instance, that individual investors in these countries also exhibit a small return-turnover relation. In that case, the overall low and statistically insignificant return-turnover relation may not be attributable to the large presence of institutional investors.\par
+
+
+\subsection{Time}
+
+In order to understand how the return-turnover relation has evolved over time (beyond the 1993-2003 period), the same trivariate VAR model described before was estimated for the 1983-1992 period, but for 23 (18 high-income markets and 6 developing markets) instead of the original 46 countries.\footnote{This restriction was due to lack of data for some countries.} Results showed that the return-turnover relation is significant in 12, 17, and 16 markets at lags one, five and ten respectively. Moreover, on average, a 1 SD shock to returns is followed by an increase of 0.18, 0.62, and 0.72 SD in turnover after one, five, and ten weeks, respectively. These effects are higher than the ones for the 1993-2003 period at five and ten weeks, and roughly the same at one week. Therefore, there was a clear decrease in the return-turnover relation from 1983-1992 to 1993-2003.\par
+
+When looking at differences by type of country, for developed countries a 1 SD shock to returns is associated with an increase of 0.52 SD in turnover after 10 weeks. This response is higher than the 0.26 SD increase in turnover found for these countries in the 1993-2003 period. The decrease in the return-turnover relation for high-income economies is remarked by the authors as one of the main findings of the paper. However, while the paper explicitly compares the estimates for both periods, they are not strictly comparable, as different groups of countries are used in each estimation. As a result, the extent to which the return-volume relation decreased over time can only be examined by comparing each country GIRFs in both periods.\footnote{Fortunately, GIRFs for the 1983-1992 period are reported for each country.} It would have been insightful they had estimated the  trivariate VAR for the 1993-2003 period using the sample of developed countries for which they estimated the trivariate VAR for the 1983-1992 period.\footnote{Notwithstanding this shortcoming, results revealed, for instance, that both the United States and the United Kingdom had a positive and statistically significant return-turnover relation in the 1983-1992 period which became insignificant the following decade.}\par
+
+On the other hand, for developing countries a 1 SD shock to returns is associated with an increase of 1.31 SD after 10 weeks, as opposed to 0.72 SD in the 1993-2003 period. The critique raised in the previous paragraph applies here as well. As data of only 6 out of the 20 original developing markets were used to estimate the GIRFs for the 1983-1992 period, both effects cannot be compared directly. It may be even conceivable that the countries not included in the 1983-1992 analysis but included in the 1993-2003 analysis had, for some unknown reason, a much lower return-turnover relation in the first than in the second period. Consequently, if we were to calculate the average return-turnover relation making the appropriate comparison, even an expanding relation over time could have been found.\par
+
+%Theoretical predictions??
+
+\subsection{Asymmetries}
+
+Asymmetries in the return-volume relation are examined using a threshold vector autoregression (TVAR), which allows for changes in the reaction of turnover depending on the sign and the magnitude of the return shocks. A striking finding is that the return-turnover relation is symmetric regarding both positive and negative return shocks, which is at odds with previous literature.\footnote{However, previous studies had investigated individual stocks (Chordia, Huh, and Subrahmanyam (2006)) or the market dollar (Chordia, Roll, and Subrahmanyam (2001)), but not stock market trading volume as a whole. Thus, GNS is the first study documenting symmetry in the return-turnover relation in the stock market.} For the 1993-2003 period, on average, a 1 SD positive shock to returns is associated with a 0.43 SD increase in turnover after 10 weeks, while a 1 SD negative shock to returns is associated with a 0.44 SD decrease in turnover after 10 weeks. Moreover, in the 1983-1992 period this symmetry holds as well, and the responses to positive and negative shocks are, on average, 0.62 and -0.65, respectively.\par
+
+Unreported exercises also indicate that small rather than large negative returns shocks appear to cause the decrease in turnover after negative return shocks. Regarding differences by type of country, the same symmetry in turnover response is found when looking at high-income and developing markets separately, and the absolute value of the return-turnover relation is larger in developing markets, irrespective of the period analyzed. \par
+
+
+\section{Conclusion}
+
+The main contribution of GNS is to document a robust positive relation between past stock returns and trading volume for a large set of countries. The paper makes a good use of the advances in the VAR literature, which may encourage future studies to further enhance the understanding of the effects of past stock returns in financial markets.\par
+
+Further, while there is support for many of the theories which predict the return-turnover relation,\footnote{Specifically, the return-turnover relation is more pronounced in countries with short-sale restrictions, with high levels of corruption, and in which market volatility is high.} results are not conclusive, since attempts to rationalize this relation suffer from shortcomings mostly related to the lack of information for many countries included in the primary analysis.\par
+
+Despite this drawback, important new evidence is provided concerning differences in the return-turnover relation across countries, investor types, across time, and across shocks' types. Overall, these results are eminently constructive for investors, as they may incorporate the dynamics of market volume in their investment strategies, and for regulators, as they may adopt measures to secure market liquidity in negative returns periods.\par
+
+
+
+%1. Establishes a robust relation return turnover, topic which was not explored before in this way \\ \\
+
+%2.Implications for hypothesis? Copy/Paste, say that summary of everything is... \\ \\
+
+%3. The methodology in general is quite suitable for analysis of sensitivity to variables to stock returns, and can be applied to further understand the relation between variables in financial markets \\ \\
+
+%4. Broad critique: analysis for 46 countries is only for the baseline results. Extensions or the intention to rationalize the theoretical predictions is made with a few number of countries and at times the link with the theoretical predictions disappears \\ \\
+
+%5. Drawback: theories are not separated because many variables are overlapped, so the understanding is not clear. Low number of observations
+
+%6. Drawback: evidence to support theoretical arguments based on specific set of countries/periods and are not conclusive
+
+%7. Extension: It would have been interesting to see differences in purchases and sellings
+
+
+
+%% References without bibTeX database:
+\nocite{*}
+\printbibliography
+
+%\bibliographystyle{plain}
+%\bibliography{sample} 
+
+
+
+
+
+
+
+\end{document}
+
