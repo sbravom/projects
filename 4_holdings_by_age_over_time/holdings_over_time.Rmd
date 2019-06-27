@@ -1,0 +1,194 @@
+---
+title: "Holdings"
+author: "Sergio Bravo"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, include=FALSE, warning=F, error=F)
+```
+
+
+
+```{r packages}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(gdata)
+library(ggthemes)
+library(XLConnect)
+library(XML)
+library(readxl)
+library(here)
+library(gganimate)
+
+
+source("AUX_get_holdings.R")
+```
+
+
+
+```{r load_choices}
+# Set dates for which we aim to obtain data
+
+mm <- unlist(rep.int(list("03", "06", "09", "12"), 
+             times = (year(Sys.Date())-2002+1)))
+
+yyyy <- rep(2002:(year(Sys.Date())), each = 4)
+
+
+# Loop function to get data
+df_holdings <- map2_dfr(yyyy, mm, get_holdings)
+
+# Correct age variable
+df_holdings$age <- as.character(df_holdings$age)
+label_45 <- c(seq(from =  1, to = 1755, by = 27))
+label_70 <- c(seq(from = 27, to = 1755, by = 27))
+df_holdings[label_45, "age"] <- "Hasta 45"
+df_holdings[label_70, "age"] <- "Más de 70"
+df_holdings$age <- as.factor(df_holdings$age)
+levels(df_holdings$age)      <- c("Hasta 45", c(46:70), "Más de 70")
+
+# UF
+uf <- read_excel("UF.XLSX")[, c(4, 5)]
+names(uf) <- c("date", "uf")
+uf$date <- as.Date(uf$date)
+uf$uf <- uf$uf/1000
+day(uf$date) <- 1
+
+
+# Join
+data <- df_holdings %>% left_join(uf, by = "date")
+
+# Data in latest period purchasing terms
+latest_uf <- data[nrow(data), "uf"]
+data <- data %>% mutate(avg_holdings_males = (avg_holdings_males/uf)*latest_uf,
+                        avg_holdings_fem   = (avg_holdings_fem/uf)*latest_uf,
+                        avg_holdings       = (avg_holdings/uf)*latest_uf) %>% 
+        dplyr::select(-uf)
+```
+
+
+
+
+
+```{r visualisation0}
+p <- data %>% ggplot(aes(x = age, y = avg_holdings/1000)) + 
+  geom_point() 
+
+p +  transition_time(date) +
+     labs(title = "Retirement savings by age \n Period: {frame_time}") +
+     anim_save(here("holdings.gif"))
+```
+
+
+
+
+```{r visualisation0}
+df_opt %>% group_by(date) %>% 
+  summarise(n_assigned = sum(assigned), n_opted = sum(opted)) %>% 
+  mutate(pct_opt = n_opted/(n_assigned+n_opted)) %>% 
+  ggplot(aes(x = date, y = pct_opt)) +  
+  geom_point() +
+  xlab('\n Year') + ylab("% \n") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(caption = "Source: Superintendency of Pensions") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 1, scale = 100), 
+                     expand = c(0, 0),
+                     breaks=c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6)) +
+  theme(axis.title=element_text(size=12)) +
+  theme_economist() +
+  ggtitle("Share of workers who choose a pension funds \n different from the default fund") +
+  ggsave(here("plot_0_opted.png"))
+```
+
+
+```{r visualisation1}
+p1 <- df_opt %>% group_by(date) %>% 
+  mutate(perc = opted/sum(opted)) %>% 
+  ggplot(aes(x = date, y = perc, fill = fund)) +  
+  geom_area(aes(fill= fund), position = 'stack') +
+  xlab('\n Year') + ylab("Share of workers in each type of fund (%) \n") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = c(0, 0)) +
+  theme(legend.position="bottom", 
+        legend.box = "horizontal",
+        axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(fill = "Fondo",
+       caption = "Source: Superintendency of Pensions") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 1, scale = 100), 
+                     expand = c(0, 0),
+                     breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1)) +
+  theme_economist() +
+  theme(axis.title=element_text(size=12)) +
+  ggtitle("Distribution of workers by fund", subtitle = "Subsample of workers who choose a fund instead of being enrolled in the default fund")# +
+#  ggsave(here("plot_1_dist_fondo.png"))
+  
+plot1 <- add_sub(p1, "
+Fund A: 80/20 equity/bonds, Fund B: 60/40 equity/bonds, Fund C: 40/60 equity/bonds, \n
+Fund D: 20/80 equity/bonds, Fund E: 5/95 equity/bonds. Equity exposure is global, and \n 
+bonds exposure has a more pronounced home bias.", x = 0, hjust = 0, size = 10) 
+
+ggdraw(plot1)
+
+```
+
+
+
+
+```{r visualisation2}
+df_chg %>% 
+  ggplot(aes(x = equity_premium, y = pct_change_opt)) + 
+  geom_point(position = "jitter") +
+  geom_smooth(method ='lm', formula = y ~ x, se = F, fullrange = T)  +
+  facet_wrap(~fund) +
+  theme_economist() +
+  xlab("\n Difference in the 12-month cumulative return \n between fund A and E (equity premium measure) (%) \n") +
+  ylab("Monthly growth in the size of each fund \n measured in number of workers (%)") +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggtitle("Do workers take more (less) risk when the relative performance \n of equities has been better (worse)?") +
+  theme(plot.title = element_text(size=13), 
+        axis.title=element_text(size=12)) + 
+  ggsave(here("plot_2_chg_return.png"))
+```
+
+
+
+```{r visualisation3}
+df_chg %>% 
+  ggplot(aes(x = equity_premium, y = pct_change_opt, color = factor(crisis))) + 
+  geom_point(position = "jitter") +
+  geom_smooth(method = "lm", formula = y ~ x, se = F, fullrange = T)  +
+  facet_wrap(~fund) +
+  theme_economist() +
+  xlab("\n Difference in the 12-month cumulative return \n between fund A and E (equity premium measure) (%) \n") +
+  ylab("Monthly growth in the size of each fund \n measured in number of workers (%)") +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggtitle("Do workers take more (less) risk when the relative performance \n of equities has been better (worse)?") +
+  scale_color_discrete(labels = c("After", "Before")) +
+  guides(color = guide_legend(reverse = TRUE)) +
+  labs(color = "Financial Crisis 2008") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size=13), 
+        axis.title=element_text(size=12)) +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggsave(here("plot_3_chg_return_crisis.png"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

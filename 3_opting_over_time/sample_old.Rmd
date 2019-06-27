@@ -1,0 +1,547 @@
+---
+title: "Selection of pension funds in Chile"
+author: "Sergio Bravo"
+output:
+  html_document
+Date: null
+header-includes:                       # To be included in the preamble of the tex file
+- \usepackage[table]{xcolor}
+- \usepackage{setspace} 
+- \doublespacing                       # Double spaced
+- \usepackage{floatrow}
+- \floatsetup[figure]{capposition=top} # Place tables' captions at the top
+- \floatsetup[table]{capposition=top}  # Place figures' captions at the top
+- \usepackage{booktabs}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+# Overview
+
+This project aims to test if Chilean workers show a "Buy High Sell Low" behaviour in the management of their pension funds, i.e. they tend to move to funds with relatively higher (lower) exposure to equities when stock market returns have been high (low) recently.
+
+## Brief description of Chilean pension system
+
+Chilean workers are obliged to save 10% of their monthly wage and to put this money in one of the five type of pension funds available. These pension funds ranges from one investing heavily (80%) in stocks (fund A) to a fund investing in almost purely (95%) in bonds (fund E). (It follows then that the other three funds, namely B, C and D, have a decreasing weight in stocks). Pensions funds are managed by six different private companies called AFPs, each one having its own version of each fund. So, in practice, workers have $5\times6=30$ different options to choose.
+
+Default funds are B, C and D, and workers are assigned to one of these according to the following criteria (differences between men and women are because the legal retirement age in Chile is 60 for women and 65 for men ):
+
+- Men and women up to 35 years old are assigned to fund B (Aggresive).
+- Men from 36 to 55 years old are assigned to fund C (Moderate).
+- Women from 36 to 50 years old are assigned to fund C (Moderate).
+- Men from 56 years are assigned to fund D (Conservative).
+- Women from 51 years old are assigned to fund D (Conservative)
+- Pensioners are assigned to fund D (Conservative).
+
+Workers are also allowed to choose a different fund in case they are willing to take more or less risk in their portfolios. They can select whichever fund they want and can even place their savings in up to two different funds (although some restrictions are imposed to workers close to retirement). If workers choose a fund, they will stay in this fund indefinitely unless they make a new selection, and there is no limit in the number of changes they can make within a year.
+
+It is worth to mention that this multifund scheme was created in 2002 and its implementation was completed in 2003. From the creation of this Pension System in 1980 until the 2002 reform, there was only one fund, fund type C, so workers could not choose where to allocate their retirement savings, and they only could decide on which mangaer to choose.
+
+
+# Instalation
+
+Run the following commands in your R console to install and load the required packages:
+
+```{r}
+Install_And_Load <- function(packages) {
+  k <- packages[!(packages %in% installed.packages()[,"Package"])];
+  if(length(k))
+  {install.packages(k, repos='https://cran.rstudio.com/');}
+  
+  for(package_name in packages)
+  {library(package_name,character.only=TRUE, quietly = TRUE);}
+}
+
+packages <- c("XML",
+          "tidyr",
+          "dplyr",
+          "purrr",
+          "stringr",
+          "ggplot2",
+          "XLConnect",
+          "lubridate",
+          "Quandl",
+          "readxl",
+          "FSA",
+          "broom",
+          "jtools",
+          "cowplot",
+          "vars",
+          "urca")
+
+Install_And_Load(packages)
+```
+
+# Data
+
+Data is downloaded from the website of the Superintendency of Pensions of Chile (SP). Data is available on a monthly basis from September 2002 (year in which the current scheme was launched) to the present. Extracted data shows, for a given month and for each type of pension funds, how many people opted for a fund and how many were in a default fund.
+
+Two different URLs are used to get the data. This is because from November 2016 the SP started to publish the data using a different address. [Here](http://www.spensiones.cl/apps/loadEstadisticas/genEstadAfiliadosCotizantes.php?id=inf_Cstadistica/aficot/mensual/2018/10/02A.html&p=M&menu=sci&menuN1=afil&menuN2=tipfon&orden=10&ext=.html) is an example of how the data in a given period is structured before being processed. Then, once data for a given month is obtained it is cleaned so as to get the information of interest. This process is repeated for every month and eventually a data frame with historical data is constructed.
+
+
+
+```{r}
+# URL to download data from the beginning until 10-2016
+URL11 <- "http://www.spensiones.cl/inf_estadistica/aficot/mensual/"
+URL12 <- "/02A.html"
+# URL to download data thereafter
+URL21 <- paste0("http://www.spensiones.cl/apps/loadEstadisticas/",
+                "genEstadAfiliadosCotizantes.php?id=inf_Cstadistica",
+                "/aficot/mensual/")
+URL22 <- "/02A.html&p=M&menu=sci&menuN1=afil&menuN2=tipfon&orden=10&ext=.html"
+```
+
+
+```{r}
+# Defining a function to import and clean the data
+
+tidy_data <- function(yyyy, mm) {
+  # URL to download data from the beginning until 10-2016
+URL11 <- "http://www.spensiones.cl/inf_estadistica/aficot/mensual/"
+URL12 <- "/02A.html"
+# URL to download data thereafter
+URL21 <- paste0("http://www.spensiones.cl/apps/loadEstadisticas/",
+                "genEstadAfiliadosCotizantes.php?id=inf_Cstadistica",
+                "/aficot/mensual/")
+URL22 <- "/02A.html&p=M&menu=sci&menuN1=afil&menuN2=tipfon&orden=10&ext=.html"
+  out <- tryCatch(
+    { 
+      # Try part
+      if (yyyy<=2015) {
+        source <- paste0(URL11, yyyy, "/", mm, URL12)
+      } else if (yyyy==2016) {
+        if (mm %in% c("01", "02", "03", "04", "05", "06",
+                      "07", "08", "09", "10")) {
+        source <- paste0(URL11, yyyy, "/", mm, URL12)
+      } else {
+        source <- paste0(URL21, yyyy, "/", mm, URL22)
+      }} else {
+        source <- paste0(URL21, yyyy, "/", mm, URL22)
+       }
+      
+      aux <- readHTMLTable(source)[[1]]  
+      names <-  aux[,1]
+      rownames(aux) <-  make.names(names, unique=TRUE)
+      aux <- aux[c("AFILIADOS.QUE.OPTAN"),] %>% .[, -1]
+      rownames(aux) <- NULL
+      names(aux) <- c("A", "B", "C", "D", "E")
+      aux <- map_df(aux, ~ str_remove_all(.x, "\\.")) %>% 
+        map_df(as.numeric)
+      aux <- aux %>% 
+        gather(key = "fund", value = "opted") %>% 
+        mutate(date = as.Date(paste0(yyyy, "-", mm,"-01"))) %>% 
+        select(date, fund, opted)
+      aux
+    },
+    # Catch part
+    error=function(cond) {
+      message(paste0("No data available for", " ", mm, "-", yyyy))
+      # Choose a return value in case of error
+      data.frame()
+    }
+  )    
+  return(out)
+}
+```
+
+
+```{r}
+# Set dates to be used as inputs for the clean_data function
+
+mm <- unlist(rep.int(list("01", "02", "03", "04", "05", "06",
+              "07", "08", "09", "10", "11", "12"), 
+             times = (year(Sys.Date())-2002+1)))
+
+yyyy <- rep(2002:(year(Sys.Date())), each = 12)
+
+
+# Loop function to get tidied data
+
+df <- map2_df(yyyy, mm, tidy_data)
+```
+
+# Visualise data
+
+Now we can take a look to the data frame we generated. This indicates, for each period, the number of people who opted for funds A (aggresive) through E (conservative).
+
+
+```{r echo=FALSE}
+map("df", 
+    function (x) {
+    excel_file         <- loadWorkbook(paste0(x,".xls"), create = TRUE)
+    createSheet(excel_file, name = x)  
+    writeWorksheet(excel_file, eval(parse(text = x)), 
+                   sheet    = x)
+    saveWorkbook(excel_file, file = paste0(x,".csv"))
+    }
+    )
+```
+
+
+```{r echo=FALSE}
+df <- read_excel("df.csv")
+```
+
+
+```{r}
+glimpse(df)
+df$date <- as.Date(df$date)
+head(df, n = 10)
+```
+
+
+# Do people show a "Buy High Sell Low" behaviour?
+
+Now we can investigate if there is any relationship between the growth of the size of each type of fund and stock returns, such that more (less) aggresive funds tend to attract more workers when stock returns have been high (low) recently.
+
+In other words, it will be analysed if workers turn to be more "optimistic" when stock returns have been "high" lately, and so they change their funds to a more aggresive fund (this is the "Buy High" part). Conversely, it will be tested if workers tend to show some degree of "panic" when stock returns have been "bad" recently, and in that case they move their funds to a more conservative fund (this is the "Sell Low" part).
+
+To make this analysis, log returns of the S&P500 index are compared to percentual changes in the number of choosers in each fund compared to the previous month. In short, the following equation is estimated:
+
+$$ R_{f,t} = \beta_{0} + \beta_{1} R_{S&P500,t} + u_{t} $$
+
+where $R_{f,t}$ is the (log) change in the number of people which is fund $f$ in period $t$ compared to $t-1$, $R_{S&P500,t}$ is the (log) return of the S&P500 index in period $t$ compared to $t-1$, $\beta_{0}$ is a constant term and $u_{t}$ an error term.
+
+Data for S&P500 index is obtained using Quandl's API as follows:
+
+```{r}
+# SP500 data
+
+sp500 <- Quandl("MULTPL/SP500_REAL_PRICE_MONTH", api_key="gB2_to2zsTyM4zTEsm_x") %>% 
+  arrange(Date) %>% 
+  filter(year(Date)>=2002)
+
+sp500$pct_change_sp500 <- c(NA, diff(log(sp500$Value)))
+colnames(sp500)[1] <- "date"
+sp500 <- sp500 %>% dplyr::select(-Value)
+head(sp500, n = 10)
+```
+
+```{r}
+# Pension funds' returns
+
+funds_returns <- read_excel("pension_funds_returns.xls")
+colnames(funds_returns) <- c("date", LETTERS[1:5])
+funds_returns$date <- as.Date(funds_returns$date)
+funds_returns <- funds_returns %>% filter(date >= min(df$date)) %>% 
+  dplyr::select(date, E)
+
+```
+
+```{r}
+df <- df %>% filter(fund=="E")
+DF <- bind_cols(df[c(-1, -nrow(df)), -2], funds_returns)
+
+DF <- DF %>% 
+  arrange(date) %>%
+  mutate(pct_change_opt = log(opted/lag(opted))) %>% 
+  dplyr::select(date, E, pct_change_opt)
+
+DF$E <- as.double(DF$E)
+
+DF$date <- as.Date(DF$date)
+
+DF1 <- DF %>% left_join(sp500, by = "date") 
+
+DF1 <- DF1 %>% dplyr::select(pct_change_opt, pct_change_sp500)
+```
+
+```{r}
+VARselect(na.omit(DF1), lag.max = 10, type = "const")$selection
+
+plot.ts(DF$E)
+plot.ts(DF$pct_change_opt)
+
+var <- VAR(na.omit(DF1), p = 14, type = "const")
+
+irf <- irf(var, impulse = "pct_change_sp500", ortho = TRUE, n.ahead = 5)
+
+plot(irf)
+
+# finding: each fund does not react to its own returns but to SP400 returns o more broadly stock returns
+
+```
+
+
+```{r}
+# Happy and Loaded
+
+happy_loaded <- read_excel("ff.xls")  
+happy_loaded <- happy_loaded %>% mutate(date = as.Date(paste0(substr(Mes, 1, 4), 
+                                                              "-", 
+                                                              substr(Mes, 6, 7),
+                                                              "-01"))) %>% 
+                                select(date, trend)
+
+happy_loaded$trend <- if_else(is.na(happy_loaded$trend), 0, as.numeric(happy_loaded$trend))
+happy_loaded$pct_change_hl <- c(NA, diff(log(happy_loaded$trend)))
+happy_loaded$pct_change_hl <- if_else(is.na(happy_loaded$pct_change_hl) | 
+                                      happy_loaded$pct_change_hl=="-Inf" |
+                                      happy_loaded$pct_change_hl=="Inf", 
+                                      0,
+                                      happy_loaded$pct_change_hl)
+```
+
+
+```{r echo=TRUE}
+# Monthly growth of funds' size
+
+df_chg <- df %>%  
+  group_by(fund) %>% 
+  arrange(date) %>%
+  mutate(pct_change_opt = log(opted/lag(opted))) %>% 
+  select(date, fund, pct_change_opt) %>% 
+  left_join(funds_returns, by = c("date", "fund"))
+
+#df_to_fit <- left_join(sp500, df_chg, by = "date") %>%
+#             left_join(happy_loaded, by = "date") %>% 
+ 
+df_to_fit <- left_join(happy_loaded, df_chg, by = "date") %>%
+ group_by(fund) %>% 
+  arrange(date) %>% 
+  mutate(pct_change_opt = 100*pct_change_opt,
+       #  pct_change_sp500 = 100*pct_change_sp500,
+         pct_change_hl = 100*pct_change_hl) %>% 
+       #  L_pct_change_sp500 = lag(pct_change_sp500),
+       #  L2_pct_change_sp500 = lag(L_pct_change_sp500)) %>% 
+ # select(-Value) %>% 
+  #select(date, fund, pct_change_opt, return, pct_change_sp500, pct_change_hl)
+  #select(date, fund, pct_change_opt, return, pct_change_sp500, pct_change_hl, L_pct_change_sp500, L2_pct_change_sp500)
+ select(date, fund, pct_change_opt, return, pct_change_hl)
+
+df_to_fit <- na.omit(df_to_fit)
+
+head(df_to_fit)
+```
+
+
+
+```{r outliers_treatment, echo=TRUE}
+outlier <- function(x){
+  low=as.numeric(quantile(x)[2] - IQR(x)*1.5)
+  high=as.numeric(IQR(x)*1.5 + quantile(x)[4])
+  list(lower.limit=low, upper.limit=high,
+    lower=which(x<low), upper=which(x>high))
+}
+
+lower <- outlier(df_to_fit$pct_change_opt)[[3]]
+upper <- outlier(df_to_fit$pct_change_opt)[[4]]
+
+df_to_fit <- df_to_fit[c(-lower, -upper), ]
+
+lower <- outlier(df_to_fit$pct_change_sp500)[[3]]
+upper <- outlier(df_to_fit$pct_change_sp500)[[4]]
+
+df_to_fit <- df_to_fit[c(-lower, -upper), ]
+```
+
+
+
+```{r echo=TRUE}
+####
+#just playing..
+df_to_fit_A <- df_to_fit %>% filter(fund=="A") %>% arrange %>% 
+  mutate(return_12m = 100*
+                      (
+                      (1 + return/100)*
+                      (1+lag(return, n = 1)/100)*
+                      (1+lag(return, n = 2)/100)*
+                      (1+lag(return, n = 3)/100)*
+                      (1+lag(return, n = 4)/100)*
+                      (1+lag(return, n = 5)/100)*
+                      (1+lag(return, n = 6)/100)*
+                      (1+lag(return, n = 7)/100)*
+                      (1+lag(return, n = 8)/100)*
+                      (1+lag(return, n = 9)/100)*
+                      (1+lag(return, n = 10)/100)*
+                      (1+lag(return, n = 11)/100)- 1 ),
+         return_4m = 100*
+                      (
+                      (1 + return/100)*
+                      (1+lag(return, n = 1)/100)*
+                      (1+lag(return, n = 2)/100)*
+                      (1+lag(return, n = 3)/100)- 1 ))
+         
+
+summary(lm(pct_change_opt ~ return + lag(return) + return_12m + pct_change_hl + lag(pct_change_hl), df_to_fit_E))
+
+summary(lm(pct_change_opt ~ lag(return) + return_12m, df_to_fit_E))
+
+summary(lm(pct_change_opt ~ lag(pct_change_opt) + lag(pct_change_opt, n =2) + lag(return) + return_4m + return_12m, df_to_fit_A))
+
+summary(lm(pct_change_opt ~ lag(return) + return_12m, df_to_fit_A[c(1:72),]))
+
+summary(lm(pct_change_opt ~ lag(return) + return_12m, df_to_fit_E[-c(1:72),]))
+
+# Esto esta brigido!! But probably negative relation was driven by the crisis
+
+ggplot(df_to_fit_E, aes(x = return_12m, y = pct_change_opt)) + 
+  geom_point() +
+  geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+# Until Dec 2009:
+
+ggplot(df_to_fit_E[c(1:72),], aes(x = return_12m, y = pct_change_opt)) + 
+    geom_point() +
+    geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+# From Jan 2010:
+
+ggplot(df_to_fit_E[-c(1:72),], aes(x = return_12m, y = pct_change_opt)) + 
+    geom_point() +
+    geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+#####
+
+ggplot(df_to_fit_A, aes(x = return_12m, y = pct_change_opt)) + 
+  geom_point() +
+  geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+# Until Dec 2009:
+
+ggplot(df_to_fit_A[c(1:72),], aes(x = return_12m, y = pct_change_opt)) + 
+    geom_point() +
+    geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+# From Jan 2010:
+
+ggplot(df_to_fit_A[-c(1:72),], aes(x = return_12m, y = pct_change_opt)) + 
+    geom_point() +
+    geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+##
+
+
+summary(lm(pct_change_opt ~ return +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_A))
+
+#### until here is just discovering
+
+df_to_fit_A <- df_to_fit %>% filter(fund=="A")
+summary(lm(pct_change_opt ~ return +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_A))
+
+df_to_fit_B<- df_to_fit %>% filter(fund=="B")
+summary(lm(pct_change_opt ~ return +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_B))
+
+df_to_fit_C<- df_to_fit %>% filter(fund=="C")
+summary(lm(pct_change_opt ~ lag(pct_change_opt) + return + +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_C))
+
+df_to_fit_D<- df_to_fit %>% filter(fund=="D")
+summary(lm(pct_change_opt ~ return +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_D))
+
+df_to_fit_E<- df_to_fit %>% filter(fund=="E")
+summary(lm(pct_change_opt ~ return +lag(return) + pct_change_hl + lag(pct_change_hl), df_to_fit_E))
+```
+
+
+```{r echo=TRUE}
+#Strong negative relationship driven by crisis!, drop those obs
+#change_fund <- change_fund %>% filter(abs(L_pct_change_sp500)<0.18)
+
+df_to_fit %>% 
+  ggplot(aes(x = pct_change_sp500, y = pct_change_opt, col = fund)) + 
+    geom_point(position = "jitter") +
+    geom_smooth(method ='lm', formula = y ~ x, se = F)  
+
+tidy_fits <- map_dfr(
+  LETTERS[1:5],
+  function (x) {
+  aux <-  df_to_fit %>% 
+  filter(fund==x) 
+  tidy(lm(pct_change_opt ~ pct_change_sp500, aux), conf.int = TRUE)[2,]
+  }
+) %>% mutate(model = LETTERS[1:5])
+
+
+tidy_fits$signif <- if_else(tidy_fits$p.value<0.01,"p<0.01", 
+                            if_else(tidy_fits$p.value<0.05,"p<0.05",
+                                    if_else(tidy_fits$p.value<0.1,"p<0.1","p>0.1")))
+
+# Growth funds' size vs S&P500 return in t
+tidy_fits %>%
+ggplot(aes(x = estimate, y = reorder(model, estimate), group = signif)) + 
+  geom_point(aes(shape=signif), size=3) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = c(0.05, 0.9),
+        legend.title = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        element_line(panel_border(colour = "gray80", 
+                                 size = 0.5, linetype = 1,
+                                 remove = TRUE)),
+        text = element_text(size=9),
+        axis.text=element_text(size=8)) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+  ylab(NULL) +
+  xlab(NULL)
+
+# show that coefficientes increase with the risk exposure of funds (A>B>C>D>E)
+
+# you how this sensitivity has evolved over time
+```
+
+
+
+
+
+
+```{r echo=TRUE}
+#Strong negative relationship driven by crisis!, drop those obs
+#change_fund <- change_fund %>% filter(abs(L_pct_change_sp500)<0.18)
+
+fund_size_sp500 <- df_to_fit %>% 
+  ggplot(aes(x = L_pct_change_sp500, y = pct_change_opt, col = fund)) + 
+    geom_point(position = "jitter") +
+    geom_smooth(method ='lm', formula = y ~ x, se = F) +
+    labs(col = "Fund type", y = "Monthly fund growth (%)", x = "S&P 500 monthly returns (%)",
+         title = "Pension Investors in Chile: Buy High, Sell Low")
+    
+p1 <-   add_sub(fund_size_sp500, 
+
+"The figure shows the relationship between Monthly fund growth for each pension fund type (measured as the percentage \n
+change in the allocated number of pension investors) against S&P 500 Return in the previous month between January 2004 \n
+and November 2018. Only the sample of pension investors who choose a fund (as opposed to be assigned in a default fund) \n 
+was considered. Outliers for both variables were excluded using the IQR rule. With a few exceptions, investors are allowed to \n 
+switch their pension investments to any of the funds A through E. Fund A holds mostly stocks while fund E holds mostly go- \n
+vernment bonds.", x = 0, hjust = 0, size = 7)
+
+ggdraw(p1)
+```
+
+
+```{r echo=TRUE}
+tidy_fits <- map_dfr(
+  LETTERS[1:5],
+  function (x) {
+  aux <-  df_to_fit %>% 
+  filter(fund==x) 
+  tidy(lm(pct_change_opt ~ L_pct_change_sp500, aux), conf.int = TRUE)[2,]
+  }
+) %>% mutate(model = LETTERS[1:5])
+
+tidy_fits$signif <- if_else(tidy_fits$p.value<0.01,"p<0.01", 
+                            if_else(tidy_fits$p.value<0.05,"p<0.05",
+                                    if_else(tidy_fits$p.value<0.1,"p<0.1","p>0.1")))
+
+# Growth funds' size vs S&P500 return in t-1
+tidy_fits %>%
+ggplot(aes(x = estimate, y = reorder(model, estimate), group = signif)) + 
+  geom_point(aes(shape=signif), size=3) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = c(0.05, 0.9),
+        legend.title = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        element_line(panel_border(colour = "gray80", 
+                                 size = 0.5, linetype = 1,
+                                 remove = TRUE)),
+        text = element_text(size=9),
+        axis.text=element_text(size=8)) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+  ylab(NULL) +
+  xlab(NULL)
+
+# show that coefficientes increase with the risk exposure of funds (A>B>C>D>E)
+
+# you how this sensitivity has evolved over time
+```
+

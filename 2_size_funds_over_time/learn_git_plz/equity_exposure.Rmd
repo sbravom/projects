@@ -1,0 +1,174 @@
+---
+title: "Fund selection"
+author: "Sergio Bravo"
+date: "10 de junio de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r warning=F, error=F}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(gdata)
+library(ggthemes)
+library(here)
+library(XML)
+library(readxl)
+library(stringr)
+library(XLConnect)
+source("AUX_clean_data.R")
+```
+
+
+
+```{r}
+# Empty DFs where I will be adding information in each interation
+df_age_q <- data.frame()  # by age and quarter
+df_q     <- data.frame() # by quarter
+df_funds_age_q <- data.frame() # by fund, age, quarter
+```
+
+
+
+```{r}
+for (i in 2003:2019) {
+  for (j in c("03", "06", "09", "12")) {  
+    # Get data
+    if (i<=2015) {
+      source <- paste0(URLS[1], i, "/", j, URLS[2])
+      funds_lst <- readHTMLTable(source, which = c(3, 5, 7, 9, 11))
+    } else if (i==2016) {
+      if (j=="03" | j=="06") {
+        source <- paste0(URLS[1], i, "/", j, URLS[2])
+        funds_lst <- readHTMLTable(source, which = c(3, 5, 7, 9, 11))
+        } else {
+          source <- paste0(URLS[3], i, "/", j, URLS[4])
+          funds_lst <- readHTMLTable(source)
+      }} else {
+      source <- paste0(URLS[3], i, "/", j, URLS[4])
+      funds_lst <- readHTMLTable(source)
+     }
+    
+    # Cleaning data
+    funds_lst <- map(funds_lst, clean_data)   # loop clean_data function over funds' data frames A to E
+    for (k in 1:5) {funds_lst[[k]][["Fund"]] <- LETTERS[k]}   # column with fund ID
+    funds_tidy   <- bind_rows(funds_lst) # merge 5 funds dfs in a single data frame
+    funds_tidy$Date <- as.Date(paste0(i, "-", j, "-01"))
+    
+    
+    # Data frames
+    source("AUX_variables_definition.R")
+    df_funds_age_q <- df_funds_age_q %>% bind_rows(funds_tidy)
+    df_age_q       <- df_age_q %>% bind_rows(df_aux_age_q)
+    df_q           <- df_q %>% bind_rows(df_aux_q)
+    
+    rm(df_aux_q, df_aux_age_q)
+  } 
+}
+```
+
+
+
+```{r}
+get_data_funds_age_q <- function(yyyy, mm) {
+  URLS <- list()   
+# URL to download data from 2003Q1 to Q62016
+URLS[1] <- "http://www.spensiones.cl/inf_estadistica/aficot/trimestral/"
+URLS[2] <- "/03A.html"
+    
+# URL To download data from Q92016 to present
+URLS[3] <- "http://www.spensiones.cl/apps/loadEstadisticas/genEstadAfiliadosCotizantes.php?id=inf_estadistica/aficot/trimestral/"
+URLS[4] <- "/03A.html&p=T&menu=sci&menuN1=afil&menuN2=tipfon&orden=30&ext=.html"
+  out <- tryCatch(
+    { 
+    # Try part
+    if (yyyy<=2015) {
+      source <- paste0(URLS[1], yyyy, "/", mm, URLS[2])
+      funds_lst <- readHTMLTable(source, which = c(3, 5, 7, 9, 11))
+    } else if (yyyy==2016) {
+      if (mm=="03" | mm=="06") {
+        source <- paste0(URLS[1], yyyy, "/", mm, URLS[2])
+        funds_lst <- readHTMLTable(source, which = c(3, 5, 7, 9, 11))
+        } else {
+          source <- paste0(URLS[3], yyyy, "/", mm, URLS[4])
+          funds_lst <- readHTMLTable(source)
+      }} else {
+      source <- paste0(URLS[3], yyyy, "/", mm, URLS[4])
+      funds_lst <- readHTMLTable(source)
+     }
+    
+    # Cleaning data
+    funds_lst <- map(funds_lst, clean_data)   # apply clean_data function over funds' data frames A to E
+    for (k in 1:5) {funds_lst[[k]][["Fund"]] <- LETTERS[k]}   # column with fund ID
+    funds_tidy   <- bind_rows(funds_lst) # merge 5 funds dfs in a single data frame
+    funds_tidy$Date <- as.Date(paste0(yyyy, "-", mm, "-01"))
+    funds_tidy
+    
+    # # Data frames
+    # source("AUX_variables_definition.R")
+    # df_funds_age_q <- df_funds_age_q %>% bind_rows(funds_tidy)
+    # df_age_q       <- df_age_q %>% bind_rows(df_aux_age_q)
+    # df_q           <- df_q %>% bind_rows(df_aux_q)
+    # 
+    # # All DFs in a list
+    # aux <- list(df_funds_age_q, df_age_q, df_q)
+    },
+    # Catch part
+    error=function(cond) {
+      message(paste0("No data available for", " ", mm, "-", yyyy))
+      # Choose a return value in case of error
+      data.frame()
+    }
+  )    
+  return(out)
+}
+```
+
+
+
+```{r}
+map(
+  c("df_age_q", "df_q", "df_funds_age_q"), 
+    function (x) {
+    excel_file         <- loadWorkbook(paste0(x,".xls"), create = TRUE)
+    createSheet(excel_file, name = x)  
+    writeWorksheet(excel_file, eval(parse(text = x)), 
+                   sheet    = x)
+    saveWorkbook(excel_file, file = paste0(x,".csv"))
+    }
+    )
+```
+
+
+```{r}
+df <- df_funds_age_q %>% mutate(max_equity = if_else(Fund=="A", 0.8, 
+                                               if_else(Fund=="B", 0.6, 
+                                                       if_else(Fund=="C", 0.4, 
+                                                               if_else(Fund=="D", 0.2, 0.05))))) %>% 
+                         mutate(equity_x_n = max_equity*All) %>% 
+                         group_by(Age, Date) %>% 
+                         summarise(pct_equity = sum(equity_x_n)/sum(All)) %>% 
+                         ungroup()
+
+# this plot suggests that default is quite strong, but it may hide that some of them are bullish and others bears
+
+df %>% ggplot(aes(x = Date, y = pct_equity, color = Age)) + geom_line(size = 0.7)
+
+gather(df_age_q, key = "risk", value = "value", -Age, -date) %>% 
+  filter(year(date)==2019) %>% 
+  ggplot(aes(x = Age, y = value, fill = risk)) + 
+    geom_bar(stat = "identity", position = "fill")
+
+# % in less risky
+
+gather(df_age_q, key = "risk", value = "value", -Age, -date) %>% 
+  filter(risk=="low_risk") %>% 
+  ggplot(aes(date, value, color = Age)) + geom_line()
+
+```

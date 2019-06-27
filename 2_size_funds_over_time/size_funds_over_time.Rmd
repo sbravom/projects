@@ -1,0 +1,155 @@
+---
+title: "Fund selection"
+author: "Sergio Bravo"
+date: "10 de junio de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r warning=F, error=F}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(gdata)
+library(ggthemes)
+library(XLConnect)
+library(readxl)
+library(gganimate)
+library(here)
+source("AUX_get_data_by_age.R")
+source("AUX_get_data_by_opt.R")
+```
+
+
+
+```{r warning=F}
+# Set dates to for which we want to obtain data
+
+mm <- unlist(rep.int(list("01", "02", "03", "04", "05", "06",
+              "07", "08", "09", "10", "11", "12"), 
+             times = (year(Sys.Date())-2002+1)))
+
+yyyy <- rep(2002:(year(Sys.Date())), each = 12)
+
+
+# Loop functions to get data
+df_age <- map2_df(yyyy, mm, get_data_funds_age_q)
+df_opt <- map2_df(yyyy, mm, get_data_by_opt)
+```
+
+
+```{r echo=F, warning=F, error=F}
+map(
+  c("df_age", "df_opt"), 
+    function (x) {
+    excel_file         <- loadWorkbook(paste0(x,".xls"), create = TRUE)
+    createSheet(excel_file, name = x)  
+    writeWorksheet(excel_file, eval(parse(text = x)), 
+                   sheet    = x)
+    saveWorkbook(excel_file, file = paste0(x,".csv"))
+    }
+    )
+```
+
+
+
+En este post quisiera ilustrar cómo el tamaño relativo de cada fondo de pensiones en Chile, medido en número de afiliados, ha evolucionado en el tiempo. Este análisis pretende dar pistas sobre qué puede influenciar las decisiones de los afiliados al escoger un fondo de pensiones, así como dilucidar si existe algún grado de persistencia en estas decisiones. Todo el análisis fue hecho con datos mensuales publicados en la web de la Superintendencia de Pensiones.
+
+El primer gráfico muestra el porcentaje de afiliados en cada tipo de fondo desde el comienzo del esquema de multifondos en 2002 hasta el presente. Si vamos recorriendo el grafico por año notamos que al principio hay un salto importante en el tamaño del fondo B, y en menor medida, en el del fondo D. Esto se debe a la realocación de afiliados desde el fondo C (el único fondo existente previo a 2002) a los nuevos fondos por defecto B y D (junto con el C).
+
+A partir 2003-2004 y hasta el año 2008, el tamaño del fondo A aumentó considerablemente, en detrimento de reducciones en el tamaño de los fondos por defecto B y C. En ese mismo periodo el fondo D se mantuvo más o menos estable y el fondo E tenía una participación insignificante. Cuando ocurre la crisis se nota un aumento discreto en los fondos más conservadores, indicando que durante e inmediatamente después de la crisis algunos afiliados decidieron "hacer la perdida" y cambiarse a fondos de menor riesgo.
+
+A partir del ano 2008-2009 y hasta el presente se observa cierta reversión de lo que había ocurrido desde 2002. El tamaño del fondo A ha disminuido en cierta medida, no tanto por una mayor preferencia por los fondos B, C y D, sino que porque el fondo E, que había atraído escaso interés previamente, aumenta considerablemente su participación.
+Este análisis deja algunas dudas. Un punto importante es que cambios en el tamaño relativo de los fondos puede reflejar cambios en la edad de los afiliados. En particular, la mayor preferencia por fondos menos riesgosos en los años recientes podría atribuirse a una mayor edad de los afiliados. Veamos entonces que pasa si controlamos por edad.
+
+El siguiente gráfico muestra la evolución del tamaño relativo de cada fondo para diferentes tramos de edad. Este permite ahondar un poco más en el análisis. En concreto, y sin entrar en muchos detalles, se puede confirmar que en general la creciente preferencia por tomar más riesgo desde 2002 se detuvo durante la crisis, y que incluso después de la crisis esta tendencia se revirtió en cierto modo. Además, este fenómeno parece haber sido transversal a los diferentes tramos de edad (aunque con cambios de distinta magnitud). A partir de estos datos resulta difícil resistirse a concluir que la crisis tuvo un efecto en las decisiones de los afiliados.
+
+Concluyo mencionando dos fenómenos interesantes. Primero, que al inicio de los multifondos un porcentaje importante de jóvenes menores de 25 optó por el fondo A (hasta un 30% antes de la crisis) y que luego de la crisis se observa un aumento en el porcentaje de afiliados de entre 25-35 en este fondo. Esto sugiere que si bien los mas jóvenes que fueron entrando al sistema no eligieron el fondo A (y más bien se quedaron con el fondo por defecto), muchos de los que sí lo eligieron cuando eran mas jóvenes simplemente no se cambiaron mas.
+
+La segundo que llama la atención es el aumento transversal en las preferencias por el fondo E en los últimos anos, el que ha llegado a representar cerca del 10% para varias edades. Mas allá de las posibles causas de este cambio de preferencias (crisis del 2008, No+AFP, FyF?), se podría pronosticar, en base a la persistencia observada entre quienes eligieron el fondo A al inicio del sistema, que un porcentaje no menor de quienes han elegido el fondo E simplemente se quedarán ahí por varios años, por no decir para siempre. Si esto será bueno o malo en el futuro, como en casi todo, depende.
+
+
+```{r echo=F, warning=F, error=F}
+df_opt %>% group_by(date) %>% 
+  mutate(n_fund = opted + assigned, perc = n_fund/sum(n_fund)) %>% 
+  ggplot(aes(x = date, y = perc, fill = fund)) +  
+  geom_area(aes(fill= fund), position = 'stack') +
+  xlab('Año') + ylab("Porcentaje de afiliados en cada fondo") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = c(0, 0)) +
+  theme(legend.position="bottom", 
+        legend.box = "horizontal",
+        axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(fill = "Fondo",
+       caption = "Fuente: Superintendencia de Pensiones") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), 
+                     expand = c(0, 0),
+                     breaks=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)) +
+  theme_economist() +
+  ggtitle("Distribución de afiliados por fondo") +
+  ggsave(here("dist_fondo.png"))
+```
+
+
+
+
+
+
+```{r echo=F, warning=F, error=F}
+p <- df_age %>% filter(year(Date)>2003) %>% 
+      ggplot(aes(x = Age, y = All, fill = Fund)) +
+      geom_bar(stat = "identity", position = "fill") +
+      scale_y_continuous(labels = scales::percent_format(accuracy = 1), 
+                        breaks=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)) +
+      scale_x_discrete(expand = c(0, 0)) +    
+      theme_economist() +
+      xlab("Edad") +      
+      ylab("Porcentaje de afiliados en cada fondo") +
+      labs(fill = "Fondo",
+      caption = "Fuente: Superintendencia de Pensiones") 
+
+p +  transition_time(Date) +
+     labs(title = "Distribución de afiliados por fondo y edad \n Periodo: {frame_time}") +
+     anim_save(here("funds_over_time.gif"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- # df <- df_funds_age_q %>% mutate(max_equity = if_else(Fund=="A", 0.8,  -->
+<!-- #                                                if_else(Fund=="B", 0.6,  -->
+<!-- #                                                        if_else(Fund=="C", 0.4,  -->
+<!-- #                                                                if_else(Fund=="D", 0.2, 0.05))))) %>%  -->
+<!-- #                          mutate(equity_x_n = max_equity*All) %>%  -->
+<!-- #                          group_by(Age, Date) %>%  -->
+<!-- #                          summarise(pct_equity = sum(equity_x_n)/sum(All)) %>%  -->
+<!-- #                          ungroup() -->
+<!-- #  -->
+<!-- # # this plot suggests that default is quite strong, but it may hide that some of them are bullish and others bears -->
+<!-- #  -->
+<!-- # df %>% ggplot(aes(x = Date, y = pct_equity, color = Age)) + geom_line(size = 0.7) -->
+<!-- #  -->
+<!-- # gather(df_age_q, key = "risk", value = "value", -Age, -date) %>%  -->
+<!-- #   filter(year(date)==2019) %>%  -->
+<!-- #   ggplot(aes(x = Age, y = value, fill = risk)) +  -->
+<!-- #     geom_bar(stat = "identity", position = "fill") -->
+<!-- #  -->
+<!-- # # % in less risky -->
+<!-- #  -->
+<!-- # gather(df_age_q, key = "risk", value = "value", -Age, -date) %>%  -->
+<!-- #   filter(risk=="low_risk") %>%  -->
+<!-- #   ggplot(aes(date, value, color = Age)) + geom_line() -->
+
+

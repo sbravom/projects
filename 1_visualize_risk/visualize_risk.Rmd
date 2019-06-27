@@ -1,0 +1,120 @@
+---
+title: "visualize_risk"
+author: "Sergio Bravo"
+date: "7 de junio de 2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, magrittr, ggplot2, scales, reshape2)
+source("get_pension.R")
+```
+
+
+
+```{r find_returns}
+focus_year <- 30
+res_r05 <-  cumulative_results(0.05)
+res_r20 <-  cumulative_results(0.20)
+res_r40 <-  cumulative_results(0.40)
+res_r60 <-  cumulative_results(0.60)
+res_r80 <-  cumulative_results(0.80)
+
+res_dens_df <- rbind(res_r80$cumul_densities,
+                     res_r60$cumul_densities,
+                     res_r40$cumul_densities,
+                     res_r20$cumul_densities,
+                     res_r05$cumul_densities)
+
+res_quantile_df <- rbind(res_r80$cumul_quantiles,
+                     res_r60$cumul_quantiles,
+                     res_r40$cumul_quantiles,
+                     res_r20$cumul_quantiles,
+                     res_r05$cumul_quantiles)
+```
+
+Un rasgo común en el ciudadano de a pie no solo en Chile sino que en el mundo es la falta de entendimiento de cómo riesgo, retorno y horizonte de inversión están relacionados. Esto nos puede llevar a no tomar las mejores decisiones para nuestro futuro al momento de ahorrar. Y el problema, como dice Dick Thaler, no es que seamos todos tontos, sino que el mundo es difícil. Un ejemplo claro es como invertimos nuestros ahorros previsionales. 
+
+En el caso de Chile, la falta de claridad sobre este tema (debiera sorprendernos? a quien le enseñaron esto en el colegio?) tal vez influya en que una cantidad no despreciable de jóvenes haya decidido invertir su ahorro previsional en fondos de pensiones de bajo riesgo. La combinación de bajo ahorro + bajo riesgo = bajas pensiones. 
+
+Este post tiene dos propósitos. El primero es ilustrar en términos concretos como el nivel de riesgo que tomamos durante nuestra vida activa afecta el ahorro que acumulamos al momento de jubilar. El segundo propósito, y más importante, es ilustrar que un mayor ahorro no resuelve el problema de bajas pensiones (o bajo ahorro acumulado) si no es acompañado de una adecuada selección del nivel de riesgo.
+
+Vamos por parte. El siguiente grafico muestra una simulación de posibles escenarios para cada tipo de fondo de AFP para un individuo chileno promedio que gana \$600.000 (bruto) y que por tanto aporta \$60.000 todos los meses (10% de su sueldo) a su cuenta previsional obligatoria. El ejercicio supone un horizonte de inversión de 30 anos (el ejercicio está pensado para el caso de los jóvenes). En la web hay varios gráficos parecidos a este, pero decidí ilustrar como se traducen los diferentes retornos acumulados en dinero, para que así sea mas fácil hacer comparaciones (y ojalá sea más chocante).
+
+[Esto lo pueden ignorar: se asume que un portafolio compuesto 100% por acciones tiene un retorno anual promedio de 6% (descontando inflación) y una volatilidad de 16%. Luego, 5 portafolios fueron construidos de acuerdo al límite máximo de exposición a acciones permitido para cada tipo de fondo de las AFP, lo que implica que los fondos A, B, C, D, E contengan, 80%, 60%, 40%, 20% y 5% en acciones. Por simplicidad se considera que la parte de renta fija más alternativos renta 0 real (debajo de colchón pero en UF). Por último, se simularon 3000 "historias", obteniendo 3000 diferentes resultados para cada portafolio.]
+
+El grafico muestra, para cada tipo de fondo, la distribución de resultados posibles, y se identifican diferentes escenarios posibles, los que por simplicidad se deniminan "bueno" (percentil 80), "normal" (mediana) y "malo" (percentil 20). Claramente hay una enorme diferencia en ahorro acumulado según el fondo escogido, lo que es producto de la magia del interés compuesto (se dice que Einstein alguna vez dijo que el interés compuesto era la octava maravilla del mundo). El escenario malo del fondo A es incluso mejor que el mejor escenario de los fondos D y E. 
+El mensaje para la casa es que si tenemos un horizonte de inversión muy largo (como el que enfrentamos cuando ahorramos para jubilar) en general paga tomar más riesgo. O dicho de otra manera, al estar en un fondo conservador estamos dejando plata sobre la mesa. En términos concretos, en el escenario "normal" haber estado en el fondo A duplica el ahorro acumulado de haber estado en el E. Quiere decir esto que debemos tomar un alto riesgo hasta jubilar? Obvio que no. Los fondos más riesgosos son mucho mas volátiles (tranquilos, pero la simulación indica que hay incluso una ínfima probabilidad de perder todo en el fondo A), por lo que bajar el riesgo a lo largo del ciclo de vida (es decir, seguir el default del sistema) es más razonable.
+Ahora vamos por el segundo punto. Alguien podria decir: "no me convence tu grafiquito y no me gusta el riesgo, así que me quedo en el fondo E y con el 4% adicional de ahorro que viene con la reforma estaré bien". Veamos que tan así es. El segundo grafico muestra el mismo ejercicio anterior pero asume un ahorro mensual del 14% del sueldo (\$80.000 mensuales). La magia del interés compuesto ahora es más brutal y las diferencias entre los fondos se acrecientan. En este caso el ahorro acumulado en el escenario "normal" del fondo A es casi tres veces el del fondo E. 
+
+Por último, al comparar ambos gráficos se desprende que, en un escenario "normal", alguien que estuvo siempre en el fondo E y ahorrando el 14% del sueldo obtiene prácticamente el mismo nivel de ahorro que alguien que estuvo siempre en el fondo C (ojo que ni siquiera es tomando un riesgo "tan" elevado) y ahorrando solo el 10% de su sueldo. El mensaje a transmitir es que para aumentar los niveles de ahorro acumulado al jubilar no basta con aumentar la tasa de ahorro si muchos cotizantes toman poco riesgo (ni hablar si a eso le sumamos lagunas previsionales o intentos de market timing..).
+
+
+Nota: Este ejercicio es una adaptación de un post hecho por Daniel Egan en su blog (dpegan.com), y obviamente ignora una serie de elementos como retorno en activos de renta fija o alternativos, aumentos en el salario durante el ciclo de vida, cambios a fondos conservadores según el default del sistema, etc. No he subido el código pero puedo compartirlo si me lo piden.
+
+
+
+
+```{r accumulated_savings}
+# Let's compare results of the different portfolios, specifically at the 30 year horizon. 
+tp <- ggplot_vertical_dist(df = res_dens_df %>% filter(year == focus_year), group_var="risk", 
+                     quantile_data = res_quantile_df %>% filter(year==focus_year), ylims = c(-5, 80))
+tp +  xlab('Ahorro acumulado (millones de pesos)') + ylab("Tipo de fondo") + 
+   scale_x_continuous(breaks = c(seq(0, 80, by = 10))) +
+  scale_y_discrete(labels = LETTERS[1:5]) +
+  scale_shape_discrete(labels = c("Bueno (p80)", "Normal (p50)", "Malo (p20)"),
+                       limits=c("0.8", "0.5", "0.2")) +
+  labs(shape = "Escenario") + 
+  theme(legend.position = c(0.8, 0.8)) + #, legend.direction = "horizontal") +
+  ggtitle("Si invierto el 10% de mi sueldo (60 mil) todos los meses, ¿cuánto ahorro \n previsional acumulo luego de 30 años?")
+```
+
+
+
+
+
+
+```{r find_returns2}
+focus_year <- 30
+saving_rate <- 0.14
+annual_wage <- 600000*12
+res_r05 <-  cumulative_results(0.05, annual_savings = saving_rate*annual_wage)
+res_r20 <-  cumulative_results(0.20, annual_savings = saving_rate*annual_wage)
+res_r40 <-  cumulative_results(0.40, annual_savings = saving_rate*annual_wage)
+res_r60 <-  cumulative_results(0.60, annual_savings = saving_rate*annual_wage)
+res_r80 <-  cumulative_results(0.80, annual_savings = saving_rate*annual_wage)
+
+res_dens_df <- rbind(res_r80$cumul_densities,
+                     res_r60$cumul_densities,
+                     res_r40$cumul_densities,
+                     res_r20$cumul_densities,
+                     res_r05$cumul_densities)
+
+res_quantile_df <- rbind(res_r80$cumul_quantiles,
+                     res_r60$cumul_quantiles,
+                     res_r40$cumul_quantiles,
+                     res_r20$cumul_quantiles,
+                     res_r05$cumul_quantiles)
+```
+
+
+
+
+```{r accumulated_savings2}
+# Let's compare results of the different portfolios, specifically at the 30 year horizon. 
+tp <- ggplot_vertical_dist(df = res_dens_df %>% filter(year == focus_year), group_var="risk", 
+                     quantile_data = res_quantile_df %>% filter(year==focus_year), ylims = c(-5, 100))
+tp +  xlab('Ahorro acumulado (millones de pesos)') + ylab("Tipo de fondo") + 
+   scale_x_continuous(breaks = c(seq(0, 100, by = 10))) +
+  scale_y_discrete(labels = LETTERS[1:5]) +
+  scale_shape_discrete(labels = c("Bueno (p80)", "Normal (p50)", "Malo (p20)"),
+                       limits=c("0.8", "0.5", "0.2")) +
+  labs(shape = "Escenario") + 
+  theme(legend.position = c(0.8, 0.8)) + #, legend.direction = "horizontal") +
+  ggtitle("Y si invierto el 14% de mi sueldo?")
+```
+
+

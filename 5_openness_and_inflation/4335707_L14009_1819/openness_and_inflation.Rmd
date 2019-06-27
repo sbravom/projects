@@ -1,0 +1,686 @@
+---
+title: "Does openness reduce inflation? A replication of a classic"
+author: "Sergio Bravo^[lexsb28@nottingham.ac.uk]"
+output:
+  pdf_document:
+    fig_caption: yes                   # To number figures
+    keep_tex: true                     # To save tex file
+always_allow_html: yes
+header-includes:                       # To be included in the preamble of the tex file
+- \usepackage{setspace} 
+- \doublespacing                       # Double spaced
+- \usepackage{floatrow}
+- \floatsetup[figure]{capposition=top} # Place tables' captions at the top
+- \floatsetup[table]{capposition=top}  # Place figures' captions at the top
+- \usepackage{booktabs}
+- \usepackage{rotating, graphicx}      # Rotate tables
+---
+
+```{r setup, include=FALSE}
+# Specify what not to show in the PDF file
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE, error=FALSE)
+```
+
+
+```{r instalation}
+# Instalation
+
+Install_And_Load <- function(packages) {
+  k <- packages[!(packages %in% installed.packages()[,"Package"])];
+  if(length(k))
+  {install.packages(k, repos='https://cran.rstudio.com/');}
+  
+  for(package_name in packages)
+  {library(package_name,character.only=TRUE, quietly = TRUE);}
+}
+
+packages <- c("tidyverse",
+              "haven",
+              "readxl",
+              "stringr",
+              "XML",
+              "stargazer",
+              "jtools",
+              "ggstance",
+              "haven",
+              "broom",
+              "ggthemes",
+              "cowplot",
+              "huxtable"
+                )
+
+Install_And_Load(packages)
+
+```
+
+
+```{r import}
+# Import data from Appendix 2 in Romer (1993)
+openness <- read_excel("data.xls") 
+
+# Removing thousand separators (commas) and setting variables as numerics
+non_num <- openness %>% select(country, letter) 
+openness <- map_dfc(openness[,c(-1,-8)], ~str_remove_all(.,",")) %>% 
+            map_dfc(function (x) as.double(x)) %>% 
+            cbind(non_num)
+rm(non_num)
+```
+
+
+```{r define_variables, results='hide'}
+# 2. Data
+# Define variables
+
+# Log Inflation         
+openness$linf <- log(openness$inf) 
+
+# Log 1980 Real Income per Capita U.S.$
+openness$lpcinc <- log(openness$pcinc) 
+
+# Openness as decimals
+openness$opendec <- openness$open/100
+
+# Letter variable equals 0 if NA
+openness$letter <- ifelse(is.na(openness$letter), 0, openness$letter)
+
+# Dummy variable for the use of the CPI rather than the GDP deflactor to measure inflation: "a"
+# in Appendix 2 notes.
+openness$data_dummy_cpi <- str_detect(openness$letter,"a") %>% 
+  as.numeric(scale(.))
+
+# Dummy variable for the use of the alternative measure of openness: "b"
+# in Appendix 2 notes.
+openness$data_dummy_open <- str_detect(openness$letter,"b")%>% 
+  as.numeric(scale(.))
+
+# Oil producers: "c" in Appendix II notes.
+openness$oil <- str_detect(openness$letter,"c")
+
+# "Good data" sample: "d" in Appendix II notes.
+openness$good <- str_detect(openness$letter,"d")
+
+# Region dummies
+## OECD countries who became members before 1993 (year the paper was published)
+url <- "http://www.oecd.org/about/membersandpartners/list-oecd-member-countries.htm"
+oecd <- readHTMLTable(url, which = 2)[,c(2,3)]
+colnames(oecd) <- c("country", "date")
+oecd <- oecd[c(-1,-38),]
+oecd$country <- str_to_title(oecd$country)
+oecd$date <- str_sub(oecd$date, -4, -1) %>% as.double()
+oecd <- oecd %>% 
+  filter(date < 1993) %>% 
+  .[["country"]]
+
+openness$oecd <- (openness$country %in% oecd)
+
+# Some countries' names in the dataset had to be changed to be  matched with the list of countries 
+# in each continent (for example Trinidad and Tobago, United Arab  Emirates and South Korea), while 
+# other countries such as Zaire doesn't exists anymore and I had to use their new names in order to 
+# be matched properly.
+
+## South America
+## List of countries
+url <- "http://www.worldometers.info/population/countries-in-south-america-by-population/"
+south_america <- readHTMLTable(url, which = 1) %>% .[[2]] %>% as.vector
+openness$south_america <- (openness$country %in% south_america)
+
+## Central America & Caribbean
+### Central America
+### List of countries
+url <- "http://www.worldometers.info/world-population/central-america-population/"
+central_america <- readHTMLTable(url, which = 2) %>% .[[1]] %>% as.vector
+
+### Caribbean
+### List of countries
+url <- "http://www.worldometers.info/world-population/caribbean-population/"
+caribbean <- readHTMLTable(url, which = 2) %>% .[[1]] %>% as.vector
+
+ctrl_am_caribbean <- c(central_america, caribbean)
+
+openness$ctrl_am_caribbean <- (openness$country %in% ctrl_am_caribbean) 
+
+## Africa
+## List of countries
+url <- "http://www.worldometers.info/geography/how-many-countries-in-africa/"
+africa <- readHTMLTable(url, which = 1) %>% .[[2]] %>% as.vector
+openness$africa <- (openness$country %in% africa)
+
+## Asia
+## List of countries
+url = "http://www.worldometers.info/geography/how-many-countries-in-asia/"
+asia <- readHTMLTable(url, which = 1) %>% .[[2]] %>% as.vector
+openness$asia <- (openness$country %in% asia)
+openness$asia <- ifelse(openness$country=="Cyprus", 0, openness$asia) # Considered European
+openness$asia <- ifelse(openness$country %in% c("Taiwan", "Hong Kong"), 1, openness$asia)
+
+```
+
+
+# 1. Introduction
+
+After Kydland and Prescott (1977) shed light on the link between precommitment in monetary policy and inflation, several theoretical models intended to analyse the dynamics of macroeconomic policy-making without precommitment. These models demonstrated that the lack of precommitment in monetary policy can cause high levels of inflation, due to the incentives to create surprise inflation and influence real output. Some variants of this type of models consider an open-economy setup, where a surprise monetary policy expansion leads to a depreciation of the exchange rate, which reduces the incentives to expand.^[Rogoff (1985b) is a representative example of these models. He notes that coordinated monetary expansion produces a better output-inflation trade-off than a one-sided expansion, because it does not induce a exchange rate depreciation. Thus, the incentives to inflate are greater under this cooperative scheme, and the credibility problem of central banks is exacerbated.]
+
+Romer (1993) tested empirically a prediction of these models, and showed strong evidence of a negative link between opennes and inflation.^[There have been a series of papers inspired by Romer (1993) which have given further evidence of the openness-inflation link. See for example Terra (1998), Temple (2002), Sachsida et al. (2003), Gruben et al. (2004) and Samimi et al. (2012). The paper by Terra (1998) is particularly relevant. Terra (1998) grouped countries according to their indebtedness level and examined the relationship between openness and inflation in two periods, 1973 to 1981 (pre-debt crisis) and 1982 to 1990 (the debt crisis period). His results showed that the effect of openness on inflation is only significant for severely indebted countries (SICs) during the debt crisis period. The author interprets this result as evidence that the SICs are precisely the ones with less precommitment in monetary policy. However, she also recognises that this interpretation does not take into account that the relation is especially stronger during 1982 to 1990. Therefore, it may be that the absence of precommitment in monetary policy causes a negative link between openness and inflation, but this link is amplified by debt crisis. Romer (1998) replied to Terra's findings saying that "the relationship he finds is not just because of the SICs during the debt crisis". He also argued that "the variation with indebtedness largely reflects the fact that countries that became more indebted were ones that had less successfully solved the commitment problem in monetary policy".] Specifically, Romer (1993) notes that the harm that a real depreciation cause because of a monetary expansion is greater in more open economies, so the benefits of an unticipated monetary expansion are decreasing in the degree of openness. Therefore, if the lack of binding precommitment is important to monetary policy, authorities in more open economies will have less incentives to expand, and hence these economies will exhibit lower rates of inflation.^[As Romer (1993) points out, in the context of Rogoff's model, by synchronising their monetary policies, two countries become a single, larger and less open economy. And because in a less open economy the benefits to inflate are higher, this extended economy will end with a higher inflation rate.]
+
+This article aims to replicate the main findings of Romer (1993), and it is structured as follows. Section 2 describes the data and the variables included in the regressions. Section 3 presents basic evidence on the relationship between opennes and inflation. Section 4 analyses the robustness of the results in the previous section. Section 5 concludes.
+
+# 2. Data
+
+In order to test the prediction that inflation will be smaller in more open countries, cross-country data in Appendix 2 of Romer's paper is used. This dataset consists of all the 114 noncentrally planned economies listed in Summers and Heston (1988), for whom data on openness and inflation are available. In addition, the dataset focuses on the period after the fall of the Bretton Woods system in 1973, since this system prevented countries from having independent monetary policies.
+
+The author regresses by OLS a measure of inflation against a measure of openness plus a set of control variables. In the most basic specifications, the following variables are used:
+
+-	Inflation: measured as the log of the average annual change in the log of GDP or GNP deflator since 1973. CPI is used for countries where data on GDP or GNP deflator is missing.
+
+-	Openness: measured as the average share of imports in GDP or GNP from 1973. When this measure is missing for some countries, an alternative series constructed by the IMF is used.
+
+Control variables:
+
+-	Real income per capita: log for 1980 is used. This variable is a general measure of development, and so it can account for several factors that influence average inflation.
+
+-	Dummy variables for OECD membership,^[At the time of the publication of the paper, the following countries were members of the Organisation for Economic Co-operation and Developmen (OECD): Australia, Austria, Belgium, Canada, Denmark, Finland, France, Germany, Greece, Iceland, Ireland, Italy, Japan, Luxembourg, Netherlands, New Zealand, Norway, Portugal, Spain, Sweden, Switzerland, Turkey, United Kingdom and United States.] major oil producers^[Major oil producers are considered to be Bahrain, Gabon, Iran, Kuwait, Oman, Saudi Arabia and United Arab Emirates,] and for various regions: they are expected to be correlated with factors that influence average inflation. Regional dummies are constructed for South America, Central America and the Caribbean and Africa.^[The author does not include explicitly a dummy for Asian and Oceanian countries, but they can be considered the "base" group in the regressions.]
+
+-	Dummy variables for the use of alternative measures: (1) dummy for the use of the CPI rather than the GDP deflator to measure inflation and (2) dummy for the use of the alternative measure of openness constructed by the IMF. These variables capture differences in the average levels of the alternative measures.
+
+```{r table_1, results = "asis", fig.cap="Descriptive Statistics"}
+# 2. Data
+
+openness %>% select(inf, open, pcinc, oecd, oil, south_america, 
+                    ctrl_am_caribbean, africa, data_dummy_cpi, data_dummy_open,
+                    polstab, cbdep) %>% 
+  stargazer(., 
+            header = FALSE,
+            title = "\\label{tab:t1}Descriptive Statistics",
+            median = TRUE,
+            covariate.labels = c(paste0("Inflation", " ","(\\%)"), 
+                                 paste0("Share of imports", "\\\\", "\\hspace{0.1cm} in GDP", " ","(\\%)"), 
+                                 paste0("Real income \\\\", "\\hspace{0.1cm} per capita", " ","(1980 U.S. \\$)"),
+                                 "OECD membership",
+                                 "Major oil producer",
+                                 "South America",
+                                 "Central America \\\\ \\hspace{0.1cm} and Caribbean",
+                                 "Africa",
+                                 "Dummy CPI", 
+                                 "Dummy Openness",
+                                 "Political \\\\ \\hspace{0.3cm} instability",
+                                 "Central bank \\\\ \\hspace{0.1cm} dependence"), 
+            nobs = FALSE,
+            digits = 2
+            )
+```
+
+Although it was not shown originally in the paper, it is insightful to look at descriptive statistics of the dataset before to move to regressions' results. Table \ref{tab:t1} describes the variables in the dataset. Regarding the dependent variable, inflation, Table \ref{tab:t1} shows that the average among all countries is 17.26%, and that despite there are countries highly inflationary (for example Bolivia, which has an average inflation rate greater than 200%), roughly three quarters of the sample has an average inflation less than 15%.
+
+On the other hand, the independent variable of interest, the openness measure, illustrates that on average countries imported 37.1% of what they consumed, and that there are economies which seem to be very closed (a ratio less than 8% ), while others are very open and import a high proportion of their GDP (the third-quartile observation has a ratio greater than 45%).
+
+As for the control variables, the degree of development, measured by real income per capita, varies considerable across countries. For instance, the third-quartile observation is more than seven times the first-quartile one. Moreover, regional dummies show that the most represented regions are Africa (33%) and OECD countries (21%), while South America and Central America and the Caribbean together account for 22% of the data.^[This implies that the "base group", i.e. Asian and Oceanic countries, are 24% of the sample.] Lastly, the alternative measures of inflation and openness are used for 17% and 6% of the countries, respectively.^[The rest of the variables in the table, Political instability and Central bank dependence, will be discussed in Section 4.1.]
+
+
+# 3. Basic Evidence
+
+
+```{r figure_1, fig.width = 4, fig.asp = 0.75, fig.align = "center", fig.cap="\\label{fig:fig1}Openness and Inflation"}
+# 3. Basic Evidence
+# Figure 1 in Romer (1993)
+
+# Plot inflation against openness
+basic_plot <- openness %>% ggplot(aes(x = open, y = inf)) + geom_point(size = 1)
+basic_plot + 
+  theme(panel.background = element_rect(fill = 'white'),
+       element_line(panel_border(colour = "gray80", 
+                                 size = 0.5, 
+                                 linetype = 1,
+                                 remove = TRUE)),
+       text = element_text(size=10),
+       axis.text=element_text(size=9)) +
+  scale_y_continuous(name = paste0("Inflation",
+                                   " ",
+                                   "(%,",
+                                   " ", 
+                                   "log scale)"),
+                     labels=5*c(1, 2, 4, 8, 16, 32),
+                     breaks=5*c(1, 2, 4, 8, 16, 32),
+                     trans='log') +
+  scale_x_discrete(name = paste0("Import share",
+                                 " ",
+                                 "(%)"), 
+                     limits=c(20*(1:8)))
+```
+
+
+Exact replications of the Basic Results section of Romer (1993) are shown in Figure \ref{fig:fig1} and Table \ref{tab:t2}.^[It is worth noting that the coefficients estimated in Table \ref{tab:t2} are identical as those in Romer (1993), except for the constant terms. In the Basic Results section in that paper, in the four specifications the constant is estimated to be negative, while in the replication made here it is always positive. Since the dataset used is the same, these estimates should be identical. However, it can be presumed that the constant terms are not shown properly in Romer's paper. The reason is that, when the predicted inflation for different levels of openness is calculated, the author uses a constant term equals to 2.875, which is the presented in column (1) in Table 2, in contrast to the one showed in his paper (-1.730).] Figure \ref{fig:fig1} displays that there is a negative association between (log) average inflation and the degree of openness. The results of a regression between both variables are in the first column of Table \ref{tab:t2}, and it is clear that there is a significant negative relationship between how open a country is and the rate of inflation it has. Specifically, an one percentage point increase in the share of imports over GDP is expected to reduce the average rate of inflation by 1%.^[As the dependent variable is log transformed, for a one unit increase in Openness we expect to see a change in the average rate of inflation of $((exp(-1.0061)-1)\times100)\% = -63.4\%$. Then, as openness is in decimal notation, a one percentage point increase in the share of imports over GDP is expected to change the average rate of inflation by $((exp(-1.0061/100)-1)\times100)\% = -1\%$. This last interpretation is by far more convenient, as rarely we would expect openness to rise by a hundred percentage points (equivalent to a one unit increase in the openness variable).] From column (1) it can also be predicted that a closed economy would have an average inflation rate of 17.5%, and that a highly open economy, with an import share of 75%, would have an average inflation of 8.3%.^[This predicted values for inflation come from using the estimated equation $log(inflation) = 2.875-1.0061\times openness$ and imposing $openness=0$ and $openness=0.75$.]
+
+
+```{r table_2_setup, results = "hide"}
+# 3. Basic Evidence
+# Table 1 in Romer (1993)
+
+# Column (1)
+t2_fit1 <- lm(linf~opendec, openness)
+
+# Column (2)
+t2_fit2 <- lm(linf ~ opendec + data_dummy_cpi + data_dummy_open, openness)
+
+# Column (3)
+t2_fit3 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, openness)
+
+# Column (4)
+t2_fit4 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open +
+           oecd + oil + south_america + ctrl_am_caribbean + africa, openness)
+
+# Compare models
+star_t2 <- stargazer(t2_fit1, t2_fit2, t2_fit3, t2_fit4,
+          header = FALSE,
+          type = 'latex',
+          font.size = "small",
+          title = "\\label{tab:t2}Basic Results",
+          order = c(10, 1, 2),
+          dep.var.labels.include = FALSE,
+          keep = c("Constant", "opendec", "lpcinc"),
+          covariate.labels = c("Constant", "Openness", "Log real income per capita"),
+          add.lines=list(c("Data dummies included?", "No", "Yes", "Yes", "Yes"), 
+                         c("Regional dummies included?", "No", "No", "No", "Yes")),
+          style = "qje",
+          omit.stat = c("adj.rsq", "f"),
+          df = FALSE,
+          notes.align = "l",
+          notes = "This will be replaced",
+          notes.append = FALSE,
+          column.sep.width = "-10pt"
+          )
+```
+
+
+```{r table_2, results = "asis", fig.cap="Basic Results"}
+# 3. Basic Evidence
+# Table 1 in Romer (1993)
+
+# Correct notes
+note.latex <- "\\multicolumn{5}{l} {\\parbox[t]{11cm}{\\footnotesize{\\textit{Notes}: * p<0.1; ** p<0.05; *** p<0.01. Standard errors are in parentheses. The dependent variable is the log of the average inflation rate since 1973. \"Data dummies\" are dummy variables for the alternative measures of openness and inflation. \"Regional dummies\" are dummy variables for South America, Central America, Africa, OECD membership, and the major oil producers.}}} \\\\"
+star_t2[grepl("Note",star_t2)] <- note.latex
+
+# Table 1
+cat (star_t2, sep = "\n")
+```
+
+The rest of the specifications in Table \ref{tab:t2} include the control variables, namely (log) real income per capita, regional dummies and the dummies for alternative data. The addition of these variables does not modify the sign of the point estimate for openness, but its magnitude (in absolute vaue) is reduced when all the set of dummies are included (column (4)). In this last case, the fit of the model is improved considerably (R$^2$ is 24 percentage points higher than in column (1)). Log real income per capita seems to be negatively related with inflation, but it cannot be rejected both in (3) and (4) that its coefficient is different from zero, as the associated p-values (not shown in the table) are non-significant in both cases (0.42 and 0.89 respectively).^[For the variables which are not shown in Table \ref{tab:t2}, estimates indicate there are differences in average inflation across groups of countries. Dummies for oil producers, South American, Central American and African countries exhibit positive estimates, ranging from 0.06 (oil producers) to 1.16 (South America). Nevertheless, only for South America can be rejected that the estimate is equal to zero. By contrast, the dummy for OECD countries has a negative but not statistically significant coefficient.]
+
+
+# 4. Robustness
+
+## 4.1. Other determinants of inflation
+
+In this section, it is tested (1) whether the link between openness and inflation is robust to the inclusion of measures of political instability and central bank dependence, and (2) if this link is weaker in countries that are more stable and that have more independent central banks. 
+
+The interest in these determinants of inflation raises from the findings of Cukierman, Webb, and Neyapti (1992) and Cukierman, Edwards, and Tabellini (1992). According to them, these measures are likely to decrease the ability of policy-makers to overcome the dynamic inconsistency problem of optimal monetary policy. They show that countries less politically stable and whose monetary policy is less independent are more prone to experience higher rates of inflation.
+
+In concrete, the political instability variable is taken from Barro (1991) and it corresponds to the mean number of revolutions and coups per year. Conversely, the measure of central bank dependence is an index of central bank dependence for the 1980s taken from Cukierman, Webb, and Neyapti (1992). Descriptive statistics for these variables are shown in the last two rows of Table \ref{tab:t1}.
+
+Exact replications of the regressions in Romer (1993) which include measures of political instability and central bank dependence are shown in Table \ref{tab:t3}. Columns (1) and (4) are essentially the same specification in column (1) in Table 2, but restricting the sample to countries for which the political instability and the central bank dependence variables are available. Columns (2) and (5) test if the link between openness and inflation is robust to the inclusion of the new variables. These columns show that while political instability and central bank dependence are positive and significantly associated with inflation, they do not alter substantially the coefficient of the openness measure.
+
+
+```{r table_3_setup, results = "hide"}
+# 4. Robustness
+# Table 2 in Romer (1993)
+
+# Column (1)
+t3_fit1 <- openness %>% filter(!is.na(polstab)) %>% 
+  lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .)
+
+# Column (2)
+t3_fit2 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open + polstab, openness)
+
+# Column (3)
+t3_fit3 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open + polstab + polstab*opendec, openness)
+
+# Column (4)
+t3_fit4 <- openness %>% filter(!is.na(cbdep)) %>% 
+  lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .)
+
+# Column (5)
+t3_fit5 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open + cbdep, openness)
+
+# Column (6)
+t3_fit6 <- lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open + cbdep*opendec, openness)
+
+# Compare models
+star_t3 <- stargazer(t3_fit1, t3_fit2, t3_fit3, t3_fit4, t3_fit5, t3_fit6,
+          header = FALSE,
+          type = 'latex',
+          font.size = "small",
+          title = "\\label{tab:t3}Other Determinants of Inflation",
+          keep = c("Constant", "opendec", "lpcinc", "polstab", "polstab*openness",
+                   "cbdep", "cbdep*openness"),
+          order = c(9, 1, 2, 5:8),
+          dep.var.labels.include = FALSE,
+          covariate.labels = c("Constant", "Openness", "Log real income per capita",
+                               "Revolution and coups", "Rev. and coups times openness",
+                               "Index of central bank dependence", "Central bank dep. times openness"),
+          column.labels   = c("Political instability", "Central bank dependence"),
+          column.separate = c(3, 3),
+          style = "qje",
+          omit.stat = c("adj.rsq", "f"),
+          df = FALSE,
+          notes.align = "l",
+          notes = "This will be replaced",
+          notes.append = FALSE,
+          column.sep.width = "-10pt"
+          )
+```
+
+
+```{r table_3, results = "asis", fig.cap="Other determinants of inflation"}
+# 4. Robustness
+# Table 2 in Romer (1993)
+
+# Correct notes
+note.latex <- "\\multicolumn{5}{l} {\\parbox[t]{11cm}{\\footnotesize{\\textit{Notes}: * p<0.1; ** p<0.05; *** p<0.01. See notes to Table I. Coefficients and standard errors for the dummy variables for alternative measures of openness and inflation are not reported.}}} \\\\"
+star_t3[grepl("Note",star_t3)] <- note.latex
+
+# Table 2
+cat (star_t3, sep = "\n")
+```
+
+
+Columns (3) and (6) answer the question if political instability and central bank dependence amplify the link between openness and inflation. In both specifications the signs of the coefficients of the interaction terms suggest this may be the case. However, only for central bank dependence (column (6)) the null hypothesis that the coefficient is equal to zero can be rejected.
+
+To get an idea of the impact of political instability and central bank dependence, Figure \ref{fig:fig2} illustrates how the effect of openness on inflation is amplified at certain levels of these variables. For instance, when the measure of political instability rises from its 25th to its 50th percentile value, the impact of openness on log average inflation rises from -0.47 to -0.82, whereas a change from its 50th to its 75th percentile value cause the impact to increase to -1.47. On the other hand, when the measure of central bank dependence rises from its 25th to its 50th percentile value, the impact of openness changes from -0.43 to -1.39, and when this measure moves from its 50th to its 75th percentile value the impact hikes to -1.58.
+
+```{r figure_2_setup, results = "hide"}
+# Visualise Table 2 in Romer (1993)
+
+# Column (3)
+
+polstab_effect <- sim_slopes(t3_fit3, 
+                           pred = opendec, 
+                           modx = polstab,
+                           modx.values = c(0.00, 0.11, 0.32), # Data from Table 1
+                           johnson_neyman = FALSE
+                           )
+
+as_huxtable(polstab_effect) # Value of opendec coef. for different values of polstab
+                            # This values are used in the next chunk
+
+# Column (6)
+
+cbdep_effect <- sim_slopes(t3_fit6, 
+                           pred = opendec, 
+                           modx = cbdep,
+                           modx.values = c(0.07, 0.17, 0.19), # Data from Table 1
+                           johnson_neyman = FALSE
+                           )
+
+as_huxtable(cbdep_effect) # Value of opendec coef. for different values of cbdep. 
+                          # This values are used in the next chunk
+```
+
+
+```{r figure_2, fig.height = 3, fig.align = "center", fig.cap="\\label{fig:fig2}Other determinants of inflation"}
+# Visualise Table 2 in Romer (1993)
+
+openness_slope_chg <- data.frame(slope = c(-0.47, -0.82, -1.47, -0.43, -1.39, -1.58),
+                 mod = c("polstab", "polstab", "polstab", 
+                       "cbdep", "cbdep", "cbdep"),
+                 p = c("p25", "p50", "p75", "p25", "p50", "p75"))
+
+plot_openness_slope_chg <- ggplot(openness_slope_chg) +
+ geom_bar(aes(p, slope, fill = as.factor(mod)), 
+          position = "dodge", stat="identity", width = 0.7) +
+  scale_fill_manual(values= c("grey60", "grey40"),
+                    labels=c("Central bank dependence", "Political Instability")) +
+ # geom_text(aes(p, slope, group = mod, label = sprintf("%2.2f", slope)), 
+ #           position = position_dodge(width = 1), size = 3) +
+  xlab(NULL) +
+  ylab("Impact of openness on \n log average inflation") +
+  scale_y_continuous(limits = c(0,2)) +
+  scale_y_reverse() +
+  theme(text = element_text(size=10),
+        axis.text=element_text(size=9),
+        aspect.ratio = 1/1,
+        plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        legend.position = c(0.0, -0.3),
+        legend.title = element_blank())
+
+plot_openness_slope_chg_caption <- add_sub(plot_openness_slope_chg, 
+        "\n \n \n \n Notes: Based on Table 3. Each bar 
+    represents the magnitud of the impact of 
+    Openness over Log average inflation when the 
+    Central bank dependence variable or the Political
+    Instability variable is at a certain level.",
+        x = 1, 
+        hjust = 1,
+        size=8,
+        lineheight = 0.75)
+
+ggdraw(plot_openness_slope_chg_caption)
+```
+
+## 4.2. Robustness across samples
+
+In this section, the author analyses the link between openness and inflation for ten subsamples using a specification which includes log real income per capita and the two dummies for the use of alternative data. Table \ref{tab:t4} shows the results of these regressions, and except for columns (4) and (8), the same outcomes as in Romer (1993) are obtained.^[As in the previous sections, in Table \ref{tab:t4} the estimates for the constant terms differ with those in the original paper.] It is worth mentioning that, for these two columns, it was not possible to use the same subsamples as in Romer (1993). Alternatively, data in Appendix 2 of Romer's paper for countries with "good data" was used as it appears, and a few assumptions about Asian countries had to be made.^[Regarding column (4), in Romer (1993) it is stated that 63 countries are in the good data subsample. Nevertheless, data published in Appendix 2 of that paper and the dataset separately provided to perform this replication indicate that these are not 63 but 62 countries. Thus, it is possible that in Appendix 2 of Romer's paper a country is missing. This possibility is rejected when checking the countries matching the "good data" criteria, i.e. countries with a "C" or better in Summers and Heston (1988), which are no major oil producers and for which dummies for the use of alternative data are not used. Since these are exactly 62 countries, this subsample is used in column (4), and results are almost identical with those obtained in Romer (1993). \newline \hspace*{0.5cm} With respect to the subsample of Asian countries, in the paper it is not explicitly mentioned which are these countries. This is not straightforward, as the dataset contains special cases. For instance, Hong Kong and Taiwan are not formally countries, at least following United Nations' criteria. However, it makes sense to consider them as Asian, so here they are included in the Asian subsample.  \newline \hspace*{0.5cm} Another special case is Cyprus. While it is geographically in Asia, it is normally considered a European country, and even it is a member of the European Union. For that reason, in this work it is excluded from the Asian subsample. Applying these two criteria, the Asian subsample comprises 26 countries, two more than in Romer's paper. As there are no more convincing arguments to exclude two more countries, column (8) is estimated with these 26 observations. Results exhibit a coefficient for Openness slightly smaller than the one in Romer's paper. Aside from that, and to be clear, despite the exclusion of Hong Kong, Taiwan and Cyprus implies 24 countries in the Asian subsample (just as in Romer's paper), in that case regression results still differ, so this was definitely not the criteria used by the author.]
+
+
+```{r table_4_setup, results = "hide"}
+# 4. Robustness
+# Table 3 in Romer (1993)
+
+# Column (1): countries with high inflation (>30%) excluded
+t4_fit1 <- openness %>% filter(inf<=30) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .)
+
+# Column (2): countries w/o monetary independence (in a monetary union) excluded 
+
+## African unions
+## West African CFA franc
+wa_cfa <- c("Benin", "Burkina Faso", "Guinea-Bissau", "Côte d'Ivoire",
+            "Mali", "Niger", "Senegal", "Togo")
+
+## Central African CFA franc
+ca_cfa <- c("Cameroon", "Central African Republic", "Chad",
+            "Congo", "Equatorial Guinea", "Gabon")
+
+## European Monetary System 
+
+# Need to consider situation in 1993
+# source: https://en.wikipedia.org/wiki/Exchange_Rate_Mechanism
+
+ems <- c("Belgium", "France", "Germany", "Ireland", "Italy", "Luxembourg",
+         "Netherlands", "Denmark")
+
+openness$mon_union <- ifelse(openness$country %in% 
+                               c(wa_cfa, ca_cfa, ems, c("Panama", "Liberia")),1,0)
+
+t4_fit2 <- openness %>% filter(mon_union==0) %>%
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (3): countries with good data
+t4_fit3 <- openness %>% filter(good==1) %>%
+lm(linf ~ opendec + lpcinc, .) # 62 countries instead of the 63 that are in Romer (1993)
+
+# Column (4): OECD countries
+
+t4_fit4 <- openness %>% filter(oecd==1) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (5): African countries
+t4_fit5 <- openness %>% filter(africa==1) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (6): South American countries
+t4_fit6 <- openness %>% filter(south_america==1) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (7): Central American countries
+t4_fit7 <- openness %>% filter(ctrl_am_caribbean==1) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (8): Asian countries
+t4_fit8 <- openness %>% filter(asia==1) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (9): Highly developed countries (highest per capita income and not major oil producers)
+t4_fit9 <- openness %>% filter(oil==0) %>% 
+  arrange(desc(lpcinc)) %>% .[1:18,] %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .) 
+
+# Column (10): Highly developed countries (highest per capita income and not major oil producers) excluded
+exclude <- openness %>% filter(oil==0) %>% 
+  arrange(desc(lpcinc)) %>% 
+  .[1:18,"country"]
+  
+t4_fit10 <- openness %>% filter(!(country %in% exclude)) %>% 
+lm(linf ~ opendec + lpcinc + data_dummy_cpi + data_dummy_open, .)
+
+# Compare models
+star_t4 <- stargazer(t4_fit1, t4_fit2, t4_fit3, t4_fit4, t4_fit5, 
+                     t4_fit6, t4_fit7, t4_fit8, t4_fit9, t4_fit10,
+          header = FALSE,
+          type = 'latex',
+          font.size = "small",
+          title = "\\label{tab:t4}Results for Narrower Samples",
+          keep = c("Constant", "opendec", "lpcinc"),
+          order = c(5, 1, 2),
+          dep.var.labels.include = FALSE,
+          model.numbers = FALSE,
+          column.labels   = c(" High      & Countries  &      &      &         &         &          &      &            & 18 highly \\\\
+ &  inflation & w/o indep. &      &      &         &         &          &      & 18 highly  & developed \\\\
+ &  countries & mon. pol.  & Good &      &         & South   & Central  &      & developed  & countries \\\\
+ & excluded   & excluded   & data & OECD &  Africa & America & America  & Asia & countries  & excluded \\\\
+ & (1)   & (2)   & (3) & (4) &  (5) & (6) & (7)  & (8) & (9)  & (10) \\\\"),
+          covariate.labels = c("Constant", "Openness", "Log real income per capita"),
+          style = "qje",
+          omit.stat = c("adj.rsq", "f"),
+          df = FALSE,
+          notes.align = "l",
+          notes = "This will be replaced",
+          notes.append = FALSE,
+          column.sep.width = "-10pt",
+          float.env = "sidewaystable"
+          )
+
+```
+
+
+```{r table_4, results = "asis", fig.cap="Results for Narrower Samples"}
+# 4. Robustness
+# Table 3 in Romer (1993)
+
+# Correct notes
+note.latex <- "\\multicolumn{11}{l} {\\parbox[t]{11cm}{\\footnotesize{\\textit{Notes}: * p<0.1; ** p<0.05; *** p<0.01. See notes to Table I. Coefficients and standard errors for the dummy variables for alternative measures of openness and inflation are not reported. High inflation countries are ones with average inflation rates greater than 30 percent. For the definitions of the samples used in columns (2) and (3), see the text or Romer (1993).}}} \\\\"
+star_t4[grepl("Note",star_t4)] <- note.latex
+
+cat (star_t4, sep = "\n")
+```
+
+
+Results in Table \ref{tab:t4} can be visualised in a more convenient way in Figure \ref{fig:fig3}. This figure illustrates, for each subsample, the point estimate, a 95% confidence interval and statistical significance for Openness. Overall, three important observations can be made from Figure \ref{fig:fig3}.
+
+Firstly, when the data is filtered to exclude some exceptions in the sample, such as countries with high inflation rates (greater than 30%),^[These countries are Argentina, Bolivia, Brazil, Chile, Ghana, Iceland, Israel, Mexico, Nicaragua, Peru, Turkey, Uganda, Uruguay and DR Congo.] whose monetary policy is not independent,^[For Africa, these countries are those using the Central African CFA franc (Cameroon, Central African Republic, Chad, Congo, Equatorial Guinea and Gabon) or the West African CFA franc (Benin, Burkina Faso, Guinea-Bissau, Côte d'Ivoire, Mali, Niger, Senegal and Togo). European countries without independent monetary policy are those in the European Monetary System at the time the paper was written (Belgium, France, Germany, Ireland, Italy, Luxembourg, Netherlands and Denmark). Lastly, Panama and Liberia were excluded for having dollarised economies.] or for which good data is not available, there is still strong evidence of a negative impact of openness on inflation. Therefore, results are not driven by the omitted countries.
+
+Secondly, when each region is inspected individually, there is no evidence that the effect of openness is significantly different from zero, and the estimates are highly imprecise in some cases (e.g. South America and Central America). This may be due to the few observations available in each case. 
+
+
+```{r figure_3, fig.width=4, fig.asp = 0.67, fig.align = "center", fig.cap="\\label{fig:fig3}Results for Narrower Samples"}
+# Visualise Table 3 in Romer (1993)
+
+models <- list(t4_fit1, 
+               t4_fit2, 
+               t4_fit3, 
+               t4_fit4, 
+               t4_fit5, 
+               t4_fit6, 
+               t4_fit7, 
+               t4_fit8, 
+               t4_fit9, 
+               t4_fit10)
+
+tidy_fits <- map_dfr(models, function (x) tidy(x, conf.int = TRUE)[2,])
+
+names <- c("High inf. countries excl.",
+           "Countries w/o indep. mon. pol. excl.",
+           "Good data",
+           "OECD",
+           "Africa",
+           "South America",
+           "Central America",
+           "Asia",
+           "18 highly dev. countries",
+           "18 highly dev. countries excl."
+           )
+
+tidy_fits$model <- names
+tidy_fits$signif <- if_else(tidy_fits$p.value<0.01,"p<0.01", 
+                            if_else(tidy_fits$p.value<0.05,"p<0.05",
+                                    if_else(tidy_fits$p.value<0.1,"p<0.1","p>0.1")))
+
+plot_fits_t4 <- tidy_fits %>%
+ggplot(aes(x = estimate, y = reorder(model, -estimate), group = signif)) + 
+  geom_point(aes(shape=signif), size=3) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        legend.position = c(0.05, 0.2),
+        legend.title = element_blank(),
+        panel.background = element_rect(fill = 'white'),
+        element_line(panel_border(colour = "gray80", 
+                                 size = 0.5, linetype = 1,
+                                 remove = TRUE)),
+        text = element_text(size=9),
+        axis.text=element_text(size=8)) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+  ylab(NULL) +
+  xlab(NULL) 
+
+plot_fits_t4_caption <- add_sub(plot_fits_t4, 
+        "Notes: For each sub-sample, each  
+          shape represents the estimate of 
+          the openness coefficient, and
+         each line the corresponding 
+         confidence interval at 95%.", 
+        x = 1, 
+        hjust = 1,
+        size=7,
+        lineheight = 0.75)
+
+ggdraw(plot_fits_t4_caption)
+```
+
+
+Lastly, and as concluding remarks, results suggest that the 18 most developed countries in the sample have the weakest link between openness and inflation, with a marginal effect of openness which is virtually zero and not statistically significant.^[Specifically, for this group of countries an increase of one percentage point in the share of imports ratio impacts average inflation in $((exp(-0.096/100)-1)\times100)\% = -0.096\%$.] This contrasts to a great extent with the point estimate that is obtained when these 18 countries are excluded from the sample. In that case, the marginal effect of openness is more than ten times higher and the null hypothesis that it is equal to zero is rejected.^[In the subsample of countries other than the 18 most developed countries, an increase of one percentage point in the share of imports ratio reduces average inflation in $((exp(-1.316 /100)-1)\times100)\% = -1.31\%$.] 
+
+# 5. Conclusion
+
+By replicating Romer (1993), this article has shown that overall there is a strong, significant and robust association between openness and inflation. More important, results indicate that this is not the case for the most developed countries, so it may be that these economies have overcomed the problem of dynamic inconsistency of optimal monetary policy. Nevertheless, it seems that the rest of the countries may not, since they display a strong relationship between openness and inflation. This means that monetary authorities in these countries are tempted to expand when the costs of doing so are lower, i.e. when the economy is less open. 
+
+\newpage
+
+# References
+
+\singlespacing Barro, R. J. (1991). Economic growth in a cross section of countries. *The quarterly journal of economics, 106*(2), 407-443.
+
+\singlespacing Cukierman, A., Edwards, S., & Tabellini, G. (1989). *Seigniorage and political instability* (No. w3199). National Bureau of Economic Research.
+
+\singlespacing Cukierman, A., Web, S. B., & Neyapti, B. (1992). Measuring the independence of central banks and its effect on policy outcomes. *The world bank economic review, 6*(3), 353-398.
+
+\singlespacing Gruben, W. C., & McLeod, D. (2004). *The openness-inflation puzzle revisited. Applied Economics Letters, 11*(8), 465-468.
+
+\singlespacing Kydland, F. E., & Prescott, E. C. (1977). Rules rather than discretion: The inconsistency of optimal plans. *Journal of political economy, 85*(3), 473-491.
+
+\singlespacing Rogoff, K. (1985b). Can International Monetary Policy Cooperation Be Counterproductive. *Journal of International Economic, 18*, 199-217.
+
+\singlespacing Romer, D. (1993). Openness and inflation: theory and evidence. *The Quarterly Journal of Economics*, *108*(4), 869-903.
+
+\singlespacing Romer, D. (1998). A new assessment of openness and inflation: reply. *The Quarterly Journal of Economics, 113*(2), 649-652.
+
+\singlespacing Sachsida, A., Carneiro, F. G., & Loureiro, P. R. (2003). Does greater trade openness reduce inflation? Further evidence using panel data techniques. *Economics Letters, 81*(3), 315-319.
+
+\singlespacing Samimi, A. J., Ghaderi, S., Hosseinzadeh, R., & Nademi, Y. (2012). Openness and inflation: New empirical panel data evidence. *Economics Letters, 117*(3), 573-577.
+
+\singlespacing Summers, R., & Heston, A. (1988). A new set of international comparisons of real product and price levels estimates for 130 countries, 1950-1985. *Review of income and wealth, 34*(1), 1-25.
+
+\singlespacing Temple, J. (2002). Openness, inflation, and the Phillips curve: a puzzle. *Journal of Money, Credit and Banking*, 450-468.
+
+\singlespacing Terra, C. T. (1998). Openness and inflation: a new assessment. *The Quarterly Journal of Economics, 113*(2), 641-648.
+
+
+
+
+

@@ -1,0 +1,241 @@
+---
+title: "Fund selection"
+author: "Sergio Bravo"
+date: "10 de junio de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE warning=F error=F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r packages}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(gdata)
+library(ggthemes)
+library(XLConnect)
+library(XML)
+library(readxl)
+library(gganimate)
+library(here)
+library(PerformanceAnalytics)
+library(xts)
+library(cowplot)
+
+source("AUX_get_data_by_age.R")
+source("AUX_get_data_by_opt.R")
+```
+
+
+
+```{r load_choices}
+# Set dates for which we aim to obtain data
+
+mm <- unlist(rep.int(list("01", "02", "03", "04", "05", "06",
+              "07", "08", "09", "10", "11", "12"), 
+             times = (year(Sys.Date())-2002+1)))
+
+yyyy <- rep(2002:(year(Sys.Date())), each = 12)
+
+
+# Loop functions to get data
+df_opt <- map2_df(yyyy, mm, get_data_by_opt)
+```
+
+
+```{r load_returns}
+# Returns for each type of fund
+funds_returns <- read_excel("real_return_funds.xls")
+colnames(funds_returns) <- c("date", LETTERS[1:5])
+funds_returns$date <- as.Date(funds_returns$date)
+funds_returns <- funds_returns %>% filter(date >= min(df_opt$date), date <= max(df_opt$date)) 
+funds_returns <- funds_returns[, 1] %>% 
+  bind_cols(
+  map_dfc(funds_returns[, -1], as.numeric)
+  )
+
+index <- funds_returns[["date"]]
+
+funds_returns_xts <- as.xts(funds_returns[, -1]/100,  order.by = index)
+
+# Cumulative 12-month returns
+funds_returns_12m_cum_list <- list()
+
+for (i in 1:5) {
+  aux <- ((apply.rolling(R = funds_returns_xts[, i], width = 12, FUN = "Return.cumulative")+1)-1)*100
+  funds_returns_12m_cum_list[[i]] <- aux
+}
+
+
+funds_returns_12m_cum_unclean <- bind_cols(funds_returns_12m_cum_list) %>% 
+  bind_cols(data.frame(date = index)) %>% 
+  na.omit()
+
+colnames(funds_returns_12m_cum_unclean) <- c(LETTERS[1:5], "date")
+
+# Tidy DF with 12-month cumulated returns
+funds_returns_12m_cum <- funds_returns_12m_cum_unclean %>% 
+   mutate(equity_premium = A-E) %>% 
+   select(date, equity_premium)
+
+funds_returns_12m_cum$equity_premium <- as.numeric(funds_returns_12m_cum$equity_premium)
+
+rm(funds_returns_12m_cum_list, funds_returns_xts, i, aux)
+```
+
+
+```{r merged}
+df_chg <- df_opt %>%  
+  group_by(fund) %>% 
+  arrange(date) %>%
+  mutate(pct_change_opt = 100*log(opted/lag(opted))) %>% 
+  select(date, fund, pct_change_opt) %>% 
+  left_join(funds_returns_12m_cum, by = c("date")) %>% 
+  na.omit()
+
+df_chg$crisis <- if_else(df_chg$date >= as.Date("2008-09-01"), "after", "before")
+```
+
+
+
+```{r outliers_treatment, echo=TRUE}
+# Outliers treatment following the Interquartile Range Rule (rule of thumb)
+outlier <- function(x){
+  low=as.numeric(quantile(x)[2] - IQR(x)*1.5)
+  high=as.numeric(IQR(x)*1.5 + quantile(x)[4])
+  list(lower.limit=low, upper.limit=high,
+    lower=which(x<low), upper=which(x>high))
+}
+
+lower <- outlier(df_chg$pct_change_opt)[[3]]
+upper <- outlier(df_chg$pct_change_opt)[[4]]
+
+df_chg <- df_chg[c(-lower, -upper), ]
+```
+
+
+
+```{r visualisation0}
+df_opt %>% group_by(date) %>% 
+  summarise(n_assigned = sum(assigned), n_opted = sum(opted)) %>% 
+  mutate(pct_opt = n_opted/(n_assigned+n_opted)) %>% 
+  ggplot(aes(x = date, y = pct_opt)) +  
+  geom_point() +
+  xlab('\n Year') + ylab("% \n") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = c(0, 0)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(caption = "Source: Superintendency of Pensions") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 1, scale = 100), 
+                     expand = c(0, 0),
+                     breaks=c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6)) +
+  theme(axis.title=element_text(size=12)) +
+  theme_economist() +
+  ggtitle("Share of workers who choose a pension funds \n different from the default fund") +
+  ggsave(here("plot_0_opted.png"))
+```
+
+
+```{r visualisation1}
+p1 <- df_opt %>% group_by(date) %>% 
+  mutate(perc = opted/sum(opted)) %>% 
+  ggplot(aes(x = date, y = perc, fill = fund)) +  
+  geom_area(aes(fill= fund), position = 'stack') +
+  xlab('\n Year') + ylab("Share of workers in each type of fund (%) \n") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = c(0, 0)) +
+  theme(legend.position="bottom", 
+        legend.box = "horizontal",
+        axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(fill = "Fondo",
+       caption = "Source: Superintendency of Pensions") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 1, scale = 100), 
+                     expand = c(0, 0),
+                     breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1)) +
+  theme_economist() +
+  theme(axis.title=element_text(size=12)) +
+  ggtitle("Distribution of workers by fund", subtitle = "Subsample of workers who choose a fund instead of being enrolled in the default fund")# +
+#  ggsave(here("plot_1_dist_fondo.png"))
+  
+plot1 <- add_sub(p1, "
+Fund A: 80/20 equity/bonds, Fund B: 60/40 equity/bonds, Fund C: 40/60 equity/bonds, \n
+Fund D: 20/80 equity/bonds, Fund E: 5/95 equity/bonds. Equity exposure is global, and \n 
+bonds exposure has a more pronounced home bias.", x = 0, hjust = 0, size = 10) 
+
+ggdraw(plot1)
+
+```
+
+
+
+
+```{r visualisation2}
+df_chg %>% 
+  ggplot(aes(x = equity_premium, y = pct_change_opt)) + 
+  geom_point(position = "jitter") +
+  geom_smooth(method ='lm', formula = y ~ x, se = F, fullrange = T)  +
+  facet_wrap(~fund) +
+  theme_economist() +
+  xlab("\n Difference in the 12-month cumulative return \n between fund A and E (equity premium measure) (%) \n") +
+  ylab("Monthly growth in the size of each fund \n measured in number of workers (%)") +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggtitle("Do workers take more (less) risk when the relative performance \n of equities has been better (worse)?") +
+  theme(plot.title = element_text(size=13), 
+        axis.title=element_text(size=12)) + 
+  ggsave(here("plot_2_chg_return.png"))
+```
+
+
+
+```{r visualisation3}
+df_chg %>% 
+  ggplot(aes(x = equity_premium, y = pct_change_opt, color = factor(crisis))) + 
+  geom_point(position = "jitter") +
+  geom_smooth(method = "lm", formula = y ~ x, se = F, fullrange = T)  +
+  facet_wrap(~fund) +
+  theme_economist() +
+  xlab("\n Difference in the 12-month cumulative return \n between fund A and E (equity premium measure) (%) \n") +
+  ylab("Monthly growth in the size of each fund \n measured in number of workers (%)") +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggtitle("Do workers take more (less) risk when the relative performance \n of equities has been better (worse)?") +
+  scale_color_discrete(labels = c("After", "Before")) +
+  guides(color = guide_legend(reverse = TRUE)) +
+  labs(color = "Financial Crisis 2008") +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size=13), 
+        axis.title=element_text(size=12)) +
+  labs(caption = "Source: Superintendency of Pensions") +
+  ggsave(here("plot_3_chg_return_crisis.png"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+Una característica del sistema de pensiones en Chile es que los afiliados al entrar al sistema son asignados a un fondo de pensiones (A, B, C, D o E) por defecto según su género y edad. Resulta interesante entonces ilustrar las elecciones que toman aquellos afiliados que han decidido no enrolarse en el fondo que les corresponde por defecto, así como entender qué puede influenciar el tipo de fondo que estos individuos escogen. 
+En primer lugar, para tener una idea de la magnitud del número de afiliados que opta por un fondo (versus aceptar el fondo por defecto), el primer grafico muestra la evolución del porcentaje de afiliados (en rigor, de cuentas de ahorro obligatorias) que opta por un fondo desde el inicio de los multifondos. Se desprende que la proporción de afiliados que escoge un fondo aumentó considerablemente entre 2002 y 2008 (año en que estalla la crisis financiera). En 2008 se observa un aumento discreto en el porcentaje de individuos que opta, para luego seguir aumentando pero a un ritmo menor. A la fecha, más de un 45% de los afiliados se encuentra en un fondo distinto al asignado por defecto.
+Ahora bien, ¿cómo se han distribuido aquellos afiliados que optan por un fondo en los diferentes tipos de fondo? El segundo gráfico responde esta pregunta, e indica que desde el inicio de los multifondos y hasta la crisis financiera del 2008 hubo una fuerte inclinación por los fondo A y B, los cuales llegaron a representar cerca del 80% de las preferencias entre este grupo de individuos. Cuando se inicia la crisis en 2008 aumentaron las preferencias por los fondos más conservadores (C, D y E), y desde entonces el tamaño relativo del fondo A se ha reducido, el de los fondos B, C y D se ha mantenido estable, a la vez que el tamaño relativo del fondo E ha aumentado notablemente.
+Las tendencias en las preferencias por cada fondo del gráfico anterior sugieren cierta relación entre el desempeño de cada fondo en términos de la rentabilidad obtenida y el tamaño relativo de cada fondo. En otras palabras, pareciera ser que algunos afiliados "persiguen" al fondo con mejor retorno. Por ejemplo, entre 2003 y 2008 los fondos A y B tuvieron un mejor desempeño que los demás fondos de pensiones, lo que se tradujo en que estos atrajeron a un importante porcentaje de afiliados. Luego, durante la crisis financiera del 2008 los fondos A y B experimentaron una fuerte caída en rentabilidad, lo que a su vez llevó a una fracción no menor de afiliados a optar por fondos más conservadores. Sin embargo, si bien desde la crisis financiera los fondos A y B han tenido una mayor rentabilidad que los otros fondos, no se observa que esto se haya traducido en mayores preferencias por esos fondos.
+Dados ciertos indicios que los afiliados persiguen al fondo con mejor retorno (al menos hasta inmediatamente después de la crisis), veamos si este fenómeno efectivamente se observa en los datos. Para esto, el tercer gráfico muestra el crecimiento porcentual mensual en el tamaño de cada fondo (medido en número de afiliados) en función de la diferencia entre el retorno acumulado a 12 meses de los fondos A y E. Si los afiliados persiguen retornos, entonces una mayor diferencia en la rentabilidad de estos dos fondos se traduciría en una mayor preferencia por fondos más riesgosos, y por tanto en un crecimiento positivo en el tamaño de estos fondos. El gráfico no deja duda alguna: mientras mayor es el retorno del fondo A respecto al fondo E, mayor es el crecimiento en el tamaño del fondo A y menor es el crecimiento en el tamaño del fondo E. En otras palabras, cuando el fondo A tiene un mejor desempeño relativo, hay una tendencia por escoger fondos más riesgosos y salirse de fondos menos riesgosos. Lo contrario también es cierto, cuando el fondo E tiene un mejor desempeño relativo, hay una tendencia por escoger fondos menos riesgosos y salirse de fondos más riesgosos. En simple: los afiliados persiguen retornos (recomendación: no hagas esto!).
+Por último, pese a que desde la crisis financiera los fondos de mayor riesgo han tenido un mejor desempeño en términos relativos, esto no se ha reflejado en una clara mayor preferencia por estos fondos. El último gráfico  busca explicar este hecho repitiendo el ejercicio realizado en el tercer gráfico,  pero considerando dos periodos diferentes: antes y después de la crisis financiera iniciada en septiembre del 2008. Se desprende que antes de la crisis los afiliados efectivamente tenían una tendencia por perseguir retornos, pues hay una asociación positiva (negativa) entre la diferencia en los retornos de los fondos A y E y el crecimiento de los fondos de mayor (menor) riesgo. Sin embargo, después de la crisis parte de esta tendencia ha desaparecido. Específicamente, después de la crisis el crecimiento en el tamaño de los fondos A y B se vuelve menos sensible al desempeño relativo del fondo A versus el fondo E. Por otro lado, para el fondo C la sensibilidad del crecimiento en el tamaño se mantiene relativamente constante y cercana a cero, mientras que para los fondos D y E se observa una mayor sensibilidad.
+
+
+
+
+
+
+
+
+
+
+
+
