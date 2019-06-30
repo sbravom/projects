@@ -1,0 +1,331 @@
+---
+title: "Holdings"
+author: "Sergio Bravo"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, include=FALSE, warning=F, error=F)
+```
+
+
+
+```{r packages}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(gdata)
+library(ggthemes)
+library(XLConnect)
+library(XML)
+library(readxl)
+library(here)
+library(ggrepel)
+
+source("AUX_get_holdings.R")
+```
+
+<!-- # Correct age variable -->
+<!-- # df_holdings$age <- as.character(df_holdings$age) -->
+<!-- # label_45 <- c(seq(from =  1, to = 1755, by = 27)) -->
+<!-- # label_70 <- c(seq(from = 27, to = 1755, by = 27)) -->
+<!-- # df_holdings[label_45, "age"] <- "Hasta 45" -->
+<!-- # df_holdings[label_70, "age"] <- "M?s de 70" -->
+<!-- # df_holdings$age <- as.factor(df_holdings$age) -->
+<!-- # levels(df_holdings$age)      <- c("Hasta 45", c(46:70), "M?s de 70") -->
+
+
+```{r load_data}
+# Set dates for which we aim to obtain data
+
+mm <- unlist(rep.int(list("12"), 
+             times = (year(Sys.Date())-2002+1)))
+
+yyyy <- rep(2002:(year(Sys.Date())), each = 1)
+
+
+# Loop function to get data
+raw_holdings <- map2_dfr(yyyy, mm, get_holdings)
+
+# UF
+uf <- read_excel("UF.XLSX")[, c(4, 5)]
+names(uf) <- c("date", "uf")
+uf$date <- as.Date(uf$date)
+uf$uf <- uf$uf
+day(uf$date) <- 1
+
+
+# Join
+data <- raw_holdings %>% left_join(uf, by = "date")
+
+# Data in latest period purchasing terms
+data$latest_uf <- data[[nrow(data), "uf"]]
+
+data <- data %>% mutate(avg_holdings_males = (avg_holdings_males/uf)*latest_uf/1000, # in millions
+                        avg_holdings_fem   = (avg_holdings_fem/uf)*latest_uf/1000,
+                        date_fct = factor(format(date, format = '%Y')),
+                        born = as.numeric(year(data$date))-data$age) %>% 
+        dplyr::select(-avg_holdings, -uf, -latest_uf, -uf)
+```
+
+
+
+
+
+
+
+```{r cohorts}
+# DF by cohort
+cohort <- data %>% 
+            gather(key = "gender", value = "avg_holdings", -date_fct, -date, -age, -born)
+
+cohort$gender <- if_else(cohort$gender == "avg_holdings_males", "Hombres", "Mujeres")
+
+# DF holdings 2007 = 100 ny cohort
+end_2007 <- data %>% filter(date_fct == 2007) %>% 
+  select("avg_holdings_males", "avg_holdings_fem", "born")
+
+names(end_2007)[c(1, 2)] <- c("avg_holdings_males_2007", "avg_holdings_fem_2007")
+
+recovery <- data %>% left_join(end_2007, by = "born") %>% 
+  mutate(recovery_males = 100*avg_holdings_males/avg_holdings_males_2007,
+         recovery_fem = 100*avg_holdings_fem/avg_holdings_fem_2007) %>% 
+  select(age, date_fct,date, born, recovery_males, recovery_fem) %>% 
+  gather(key = "gender", value = "avg_holdings", -date_fct, -date, -age, -born)
+
+recovery$gender <- if_else(recovery$gender == "recovery_males", "Hombres", "Mujeres")
+
+data$born <- as.character(data$born)
+```
+
+
+
+
+```{r visualisation, fig.width=8, fig.height=4}
+x_limits <- c(as.factor(2020), NA)
+
+cohort %>%  filter(born %in% c(1955:1962)) %>% 
+mutate(label = if_else(date == max(date), as.character(born), NA_character_)) %>%
+  ggplot(aes(x = date_fct, y = avg_holdings, group = as.factor(born), colour = as.factor(born))) + 
+  geom_line(position=position_jitter(w=0.05, h=0)) + 
+  geom_point(aes(group = as.factor(born), colour = as.factor(born))) +
+  geom_text_repel(aes(label = label),
+                  nudge_x = 5,
+                  na.rm = TRUE,
+                  size = 3.5,
+                  direction = "y",
+                  hjust = 0,
+                  xlim  = x_limits) +
+  facet_wrap(~gender) +
+  scale_colour_discrete(guide="none") +
+  scale_x_discrete(breaks = c(2002:2018)) +
+  expand_limits(x = c("2002", "2020")) +
+  xlab(NULL) +
+  ylab("Saldo promedio cuenta de capitalizacion individual \n 
+       (millones de pesos) \n") + 
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.title.x = element_text(colour = "black"),
+        axis.title.y = element_text(colour = "black"),
+        panel.grid.major = element_line(colour = "gray80"),
+        axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Figura 1: Saldo promedio cuenta obiligatoria según año de nacimiento") +
+  labs(caption = "Fuente: Superintendencia de Pensiones de Chile") +
+  ggsave(here("fig1_holdings_by_cohort_gender.png"))
+
+
+recovery %>%  filter(born %in% c(1955:1962), year(date)>2006) %>% 
+mutate(label = if_else(date == max(date), as.character(born), NA_character_)) %>%
+  ggplot(aes(x = date_fct, y = avg_holdings, group = as.factor(born), colour = as.factor(born))) + 
+  geom_line(position=position_jitter(w=0.05, h=0)) + 
+  geom_point(aes(group = as.factor(born), colour = as.factor(born))) +
+  geom_text_repel(aes(label = label),
+                  nudge_x = 5,
+                  na.rm = TRUE,
+                  size = 3.5,
+                  direction = "y",
+                  hjust = 0,
+                  xlim  = x_limits) +
+  facet_wrap(~gender) +
+  scale_colour_discrete(guide="none") +
+  scale_x_discrete(breaks = c(2007:2018)) +
+  expand_limits(x = c("2007", "2020"),
+                y = c(100, 200)) +
+  xlab(NULL) +
+  ylab("Saldo cuenta de capitalizaci?n individual \n (2007=100) \n") + 
+  theme(panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.title.x = element_text(colour = "black"),
+        axis.title.y = element_text(colour = "black"),
+        panel.grid.major = element_line(colour = "gray80"),
+        axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Figura 2: Saldo cuenta obiligatoria según año de nacimiento",
+          subtitle = "Saldo diciembre 2007 = 100") +
+  labs(caption = "Fuente: Superintendencia de Pensiones de Chile") +
+  ggsave(here("fig2_holdings_by_cohort_gender_normalised.png"))
+```
+
+
+
+Una estrategia frecuentemente recomendada para invertir los ahorros previsionales es la de construir un portafolio altamente concentrado en acciones al inicio de la vida laboral y “rebalancear” gradualmente la cartera hacia bonos a medida que el retiro se aproxima, dado que la mayor volatilidad de las acciones podría ocasionar pérdidas imposibles de recuperar antes del retiro. En otras palabras, esta estrategia implica acumular riqueza durante la primera parte del ciclo de vida y preservar el capital cuando estamos cerca de jubilarnos.
+
+En esta estrategia está precisamente basado el sistema previsional chileno. En Chile, pese a que los fondos de pensiones disponibles (A, B, C, D y E) difieren en el porcentaje de acciones que poseen, la asignación por defecto del sistema, la cual aplica para aquellos afiliados que no han manifestado una preferencia por algún fondo, contempla una reducción en acciones a lo largo de ciclo de vida (para no entrar en detalles, si no conocen cuál es la asignación por defecto pueden revisarla aquí.)
+Ahora bien, aun cuando esta estrategia de inversión es ampliamente popular en la práctica, el debate académico está lejos de haber llegado a un acuerdo en cuanto a qué enfoque es superior, y una serie de artículos han evaluado la conveniencia relativa de diferentes estrategias. Por ejemplo, un estudio publicado en 2006 por la “National Bureau of Economic Research” en EE.UU comparó las estrategias de ciclo de vida (parecidas al esquema de multifondos en Chile ) contra estrategias invariantes a la edad (como 100% en acciones, 100% en bonos o una proporción constante en acciones), concluyendo que:
+
+“La distribución de la riqueza al jubilar asociada con estrategias de inversión típicas del ciclo de vida es similar a la de estrategias invariantes a la edad en donde el porcentaje de acciones en la cartera es igual al porcentaje de acciones promedio en las estrategias de ciclo de vida.”
+Una posible implicancia de lo anterior es que da lo mismo si seguimos la asignación por defecto de los multifondos o invertimos, por ejemplo, siempre en el fondo C, pues en ambos casos se obtendría una pensión similar (obviamente esta es una simplificación, pero me sirve para hacer el punto más abajo). No quisiera entrar en esta discusión (sobre la cual estoy lejos de tener la respuesta), y más bien asumamos por un momento que la estrategia de ciclo de vida es la óptima, y que por lo tanto la asignación por defecto de los multifondos es un vehículo atractivo para invertir nuestros ahorros.
+
+Tendría sentido entonces que los jóvenes en sus 20s o un poco adentrados en sus 30s que comienzan a cotizar sean asignados al fondo B, que tiene un alto porcentaje en acciones (aunque tampoco tanto: 60%), y luego sean paulatinamente asignados al C en la mitad de sus 30s, y finalmente al D en sus 50s. Esta estrategia implica que los afiliados (hombres y mujeres) hayan tenido en promedio una exposición de un poco más de 40% en renta variable a lo largo de su vida (no mucho tampoco, dirían algunos, pero asumamos que está bien).
+Hasta ahora todo bien, pero hay un problema. ¿Qué pasa con aquellos que al inicio de los multifondos ya estaban en el fondo C? Acá se distinguen dos grupos. El primero comprende aquellos de hasta 35, los cuales fueron reasignados automáticamente desde el fondo C al fondo B, lo que les permitió tal vez compensar el hecho de no haber tomado más riesgo en sus carteras cuando comenzaron a cotizar. El segundo grupo corresponde a aquellos mayores a 35, quienes estuvieron siempre en el fondo C y luego fueron reasignados al fondo D.
+
+Bueno, ¿y cuál es el problema? El problema es que la implementación de los multifondos ignoró que un grupo de cotizantes nunca había estado en la fase de “acumulación”, y en definitiva se forzó a una cantidad no menor de afiliados a tomar menos riesgo que las generaciones más nuevas. Esto implica que mujeres que estuvieron hasta los 50 años en el fondo C y luego fueron asignadas al D tengan a los 60 un promedio de exposición a acciones de 34% durante su vida (asumiendo que comenzaron a cotizar a los 25, y sin lagunas obviamente). Esta misma cifra para los hombres (que son reasignados a los 55 años y jubilan en teoría a los 65) es 36%.
+
+Mirando en retrospectiva, al parecer la reasignación desde el fondo C hacia el D para aquellos que nunca cotizaron en el fondo B no fue del todo favorable, y este grupo se habría beneficiado más habiendo mantenido sus inversiones en el fondo C. Obviamente con hechos consumados emitir un juicio es mucho más fácil, pero veamos de todas maneras lo que muestran los datos.
+
+La primera figura muestra la evolución del saldo promedio acumulado en la cuenta de capitalización obligatoria por año de nacimiento y género desde el inicio de los multifondos. Es bastante claro que, para la mayor parte del periodo, quienes nacieron antes tienen un mayor nivel de ahorro acumulado, tanto para mujeres como hombres. Sin embargo, en la última década se nota una ligera reducción en la distancia vertical entre las líneas, siendo más notorio para los hombres. La reducción en las diferencias en el saldo acumulado entre las distintas cohortes llega a tal punto que, en 2018, para ambos géneros, aquellos que nacieron en 1956 alcanzan un mayor nivel de ahorro que los que nacieron en 1955.
+
+¿Y por qué se puede haber dado esto? Un poco de aritmética nos dice que los hombres del 1955 al término del 2008 (año de la crisis financiera, en el que hubo una fuerte caída en los saldos acumulados) tenían 53 años (si mi cálculo no falla), es decir, estaban en el fondo C. Al año siguiente (2009) hubo una espectacular recuperación en los saldos promedio, y esta generación seguía en el fondo C. En el 2010 no hubo mucho movimiento en los saldos acumulados, y esta generación seguía en el fondo C. En el 2011 el asunto se pone más interesante, pues en este año se logra una recuperación (en términos reales) de todo lo perdido desde el peak en el saldo acumulado en 2007, y desde entonces se observa un aumento sostenido en los saldos. Sin embargo, es en 2011 cuando los del 1955 comienzan a ser transferidos al fondo D, y coincidentemente, es en este año cuando comienzan a perder terreno frente a las generaciones que le preceden, las cuales tenían un poco más de porcentaje en acciones.
+
+El caso de las mujeres del 1955 es aún mas curioso, pues en 2008 tenían también 53 años, y estaban en pleno proceso de ser transferidas desde el fondo C al D. Uno pensaría que, dado que las mujeres del 1955 tenían menos acciones que las del 1956, las primeras pudieron haber evitado más las perdidas ocasionadas por la crisis. No obstante, igualmente se observa que finalmente la generación del 1956 alcanza un mayor saldo.
+
+
+Por último, la segunda figura muestra también evolución del saldo acumulado promedio, pero normalizando las series de tal manera de hacer comparables los movimientos entre las distintas generaciones desde el peak de 2007. Tanto para hombres como para mujeres hay evidencia de diferencias sustanciales en el crecimiento en el ahorro acumulado entre 2007 y 2018, incluso entre generaciones contiguas. El caso de los hombres es más dramático. La generación de 1955 alcanzó a fines de 2018 un saldo promedio un 49% mayor al de 2007, mientras que para la generación de 1961 esta cifra es de 71%.
+
+A modo de conclusión, este ejercicio muestra primero que la reasignación automática de los multifondos conlleva que algunas generaciones simplemente tienen la suerte de tener más acciones en momentos que es más favorable tenerlas, lo que las puede llevar a tener un mayor ahorro que generaciones anteriores. Por otro lado, resulta también evidente que todos se hubieran beneficiado de haberse mantenido siempre en el fondo C, y las brechas entre las generaciones no se hubiesen reducido. Pero claro, ahora es fácil decirlo.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- x_limits <- c(as.factor(2020), NA) -->
+
+<!-- cohort %>%  filter(born %in% c(1955:1965)) %>%  -->
+<!-- mutate(label = if_else(date == max(date), as.character(born), NA_character_)) %>% -->
+<!--   ggplot(aes(x = date_fct, y = avg_holdings_fem, group = born, colour = born)) +  -->
+<!--   geom_line(position=position_jitter(w=0.05, h=0)) +  -->
+<!--   geom_point(aes(group = born, colour = born)) + -->
+<!--   geom_text_repel(aes(label = label), -->
+<!--                   nudge_x = 5, -->
+<!--                   na.rm = TRUE, -->
+<!--                   size = 3.5, -->
+<!--                   direction = "y", -->
+<!--                   hjust = 0, -->
+<!--                   xlim  = x_limits) + -->
+<!--   scale_colour_discrete(guide="none") + -->
+<!--   scale_x_discrete(breaks = c(2002:2018)) + -->
+<!--   expand_limits(x = c("2002", "2020")) + -->
+<!--   xlab(NULL) + -->
+<!--   ylab("Saldo promedio cuenta de capitalizaci?n individual \n  -->
+<!--        (millones de pesos) \n") +  -->
+<!--   theme(panel.background = element_blank(), -->
+<!--         axis.line = element_line(colour = "black"), -->
+<!--         axis.title.x = element_text(colour = "black"), -->
+<!--         axis.title.y = element_text(colour = "black"), -->
+<!--         panel.grid.major = element_line(colour = "gray80")) + -->
+<!--   ggtitle("Figura 3: Saldo promedio cuenta obiligatoria seg?n a?o de nacimiento", subtitle = "Mujeres") + -->
+<!--   labs(caption = "Fuente: Superintendencia de Pensiones de Chile") -->
+
+
+
+
+
+
+
+
+<!-- cohort %>% filter(born %in% c(1955:1965)) %>%  -->
+<!--   mutate(label = if_else(date == max(date), as.character(born), NA_character_)) %>% -->
+<!--   ggplot(aes(x = date_fct, y = recovery_fem, group = born, colour = born)) +  -->
+<!--   geom_line(position=position_jitter(w=0.05, h=0)) +  -->
+<!--   geom_point(aes(group = born, colour = born)) + -->
+<!--   geom_text_repel(aes(label = label), -->
+<!--                   nudge_x = 5, -->
+<!--                   na.rm = TRUE, -->
+<!--                   size = 3.5, -->
+<!--                   direction = "y", -->
+<!--                   hjust = 0, -->
+<!--                   xlim  = x_limits) + -->
+<!--   scale_colour_discrete(guide="none") + -->
+<!--   scale_x_discrete(breaks = c(2002:2018)) + -->
+<!--   expand_limits(x = c("2002", "2020")) + -->
+<!--  # scale_x_date(date_breaks = "2 years", date_labels = "%Y") + -->
+<!--   xlab(NULL) + -->
+<!--   ylab("Figura 4: Saldo cuenta de capitalizaci?n individual \n") +  -->
+<!--   theme(panel.background = element_blank(), -->
+<!--         axis.line = element_line(colour = "black"), -->
+<!--         axis.title.x = element_text(colour = "black"), -->
+<!--         axis.title.y = element_text(colour = "black"), -->
+<!--         panel.grid.major = element_line(colour = "gray80")) + -->
+<!--   ggtitle("Saldo cuenta obiligatoria seg?n a?o de nacimiento", subtitle = "Mujeres. Saldo diciembre 2007 = 100") + -->
+<!--   labs(caption = "Fuente: Superintendencia de Pensiones de Chile") -->
+
+
+
+<!-- # cohort %>% filter(born %in% c(1955:1961)) %>% -->
+<!-- #   ggplot(aes(x = date, y = avg_holdings_males, colour = born, label = born)) + -->
+<!-- #   geom_line(position=position_jitter(w=0.02, h=0)) + -->
+<!-- #   expand_limits(x = as.Date(c("2006-12-01", "2020-12-01"))) + -->
+<!-- #   geom_label_repel( -->
+<!-- #     arrow = arrow(length = unit(0.03, "npc"), type = "closed", ends = "first"), -->
+<!-- #     force = 10) + -->
+<!-- #   scale_colour_discrete(guide="none") + -->
+<!-- #   xlab(NULL) + -->
+<!-- #   ylab("Saldo promedio cuenta capitalizaci?n individual \n (millones de pesos) \n") -->
+
+<!-- # cohort %>% filter(born %in% c(1955:1961)) %>% -->
+<!-- #   ggplot(aes(x = date, y = recovery_males, colour = born, group = born)) + -->
+<!-- #   geom_line(position=position_jitter(w=0.02, h=0)) + -->
+<!-- #   expand_limits(x = as.Date(c("2006-12-01", "2020-12-01"))) + -->
+<!-- #   geom_dl(aes(label = born), method = list(dl.combine("first.points", "last.points"), cex = 0.8)) + -->
+<!-- #   scale_colour_discrete(guide="none") + -->
+<!-- #   xlab(NULL) + -->
+<!-- #   ylab("Saldo promedio cuenta capitalizaci?n individual \n (millones de pesos) \n") -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
